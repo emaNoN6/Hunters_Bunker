@@ -1,0 +1,25 @@
+# This file defines all our intelligence gathering targets.
+
+- name: "Reddit Paranormal"
+  type: "reddit"
+  target: "paranormal" # This is the subreddit name
+  keywords: ["sighting", "experience", "heard", "saw"]
+
+- name: "Reddit Ghosts"
+  type: "reddit"
+  target: "ghosts"
+  keywords: ["orb", "apparition", "EVP", "cold spot"]
+
+- name: "Local Pennsylvania News"
+  type: "gnews"
+  target: "Pennsylvania"
+  keywords: ["strange death", "bizarre accident", "unexplained lights", "animal attack"]
+  
+- name: "Fortean Times"
+  type: "web_scraper"
+  target: "https://www.forteantimes.com/"
+
+- name: "Controlled Test Data"
+  type: "test"
+  target: "test_leads.json"
+# We can add more targets here later...
