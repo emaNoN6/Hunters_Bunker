@@ -5,11 +5,12 @@ import os
 import time
 import re
 import wikipedia
+import config_manager
 
 # --- Configuration (can be adjusted here) ---
 CASE_DIRS = ["lore_transcripts", "g:\\My Drive\\Unexplained_Transcripts"]
 NOT_CASE_DIR = "training_data/not_a_case"
-BALANCE_THRESHOLD = 0.95
+BALANCE_THRESHOLD = float(config_manager.get_config_value("General", "balance_threshold") or 0.97)
 CONTAMINATION_KEYWORDS = [
     "ghost",
     "haunted",
@@ -38,7 +39,7 @@ CONTAMINATION_KEYWORDS = [
     "zombie",
     "magic",
     "occult",
-    "omen"
+    "omen",
 ]
 
 
@@ -138,6 +139,7 @@ class GuardianApp(ctk.CTk):
         self.case_words_var = ctk.StringVar(value="Case Words: N/A")
         self.not_case_words_var = ctk.StringVar(value="Not-a-Case Words: N/A")
         self.balance_var = ctk.StringVar(value="Balance: N/A")
+        self.balance_threshold = ctk.StringVar(value=f" / {BALANCE_THRESHOLD * 100:.0f}%")  
         self.status_var = ctk.StringVar(value="Status: Inactive")
 
         # --- Threading Control ---
@@ -147,16 +149,21 @@ class GuardianApp(ctk.CTk):
         self.force_check_event = threading.Event()
 
         # --- Create Widgets ---
-        ctk.CTkLabel(self, textvariable=self.case_words_var, font=("System", 14)).pack(
+        ctk.CTkLabel(self, textvariable=self.case_words_var, font=("System", 15)).pack(
             pady=5
         )
         ctk.CTkLabel(
-            self, textvariable=self.not_case_words_var, font=("System", 14)
+            self, textvariable=self.not_case_words_var, font=("System", 15)
         ).pack(pady=5)
+        balance_frame = ctk.CTkFrame(self)
+        balance_frame.pack(pady=10)
         ctk.CTkLabel(
-            self, textvariable=self.balance_var, font=("System", 14, "bold")
-        ).pack(pady=5)
-        ctk.CTkLabel(self, textvariable=self.status_var, font=("System", 12)).pack(
+            balance_frame, textvariable=self.balance_var, font=("System", 15, "bold")
+        ).pack(pady=5, side="left", fill="none")
+        ctk.CTkLabel(
+            balance_frame, textvariable=self.balance_threshold, font=("System", 15, "bold")).pack(
+                pady=5, side="left")
+        ctk.CTkLabel(self, textvariable=self.status_var, font=("System", 14)).pack(
             pady=10
         )
 
@@ -214,7 +221,7 @@ class GuardianApp(ctk.CTk):
                     self.case_words_var.set(f"Case Words: {case_w:,}")
                     self.not_case_words_var.set(f"Not-a-Case Words: {not_case_w:,}")
                     balance_pct = (not_case_w / case_w * 100) if case_w > 0 else 100
-                    self.balance_var.set(f"Balance: {balance_pct:.2f}%")
+                    self.balance_var.set(f"Balance: {balance_pct:.0f}%")
         except queue.Empty:
             pass
 

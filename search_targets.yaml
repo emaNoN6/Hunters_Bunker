@@ -19,6 +19,26 @@
   type: "web_scraper"
   target: "https://www.forteantimes.com/"
 
+- name: "Mysterious Universe"
+  type: "web_scraper"
+  target: "https://mysteriousuniverse.org/"
+
+- name: "Cryptid Wiki"
+  type: "web_scraper"
+  target: "https://cryptidz.fandom.com/wiki/Cryptid_Wiki"  
+
+- name: "AP News Oddities"
+  type: "rss_feed"
+  target: "https://rsshub.app/apnews/topics/oddities"
+
+- name: "Strange Outdoors"
+  type: "web_scraper"
+  target: "https://strangeoutdoors.com/"
+
+- name: "NPR Strange News"
+  type: "rss_feed"
+  target: "https://www.npr.org/rss/rss.php?id=1146"
+
 - name: "Controlled Test Data"
   type: "test"
   target: "test_leads.json"

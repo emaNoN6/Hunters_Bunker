@@ -1,4 +1,3 @@
-# ===============================================
 # Now accepts a standard set of arguments for consistency.
 
 import requests
@@ -10,7 +9,6 @@ def hunt(target_info, credentials, log_queue, results_queue):
     'credentials' is a dictionary that holds all API keys.
     """
 
-    # Helper function to send logs back to the main GUI
     def log(message):
         log_queue.put(f"[GNEWS AGENT]: {message}")
 
@@ -21,7 +19,7 @@ def hunt(target_info, credentials, log_queue, results_queue):
     log(f"Searching for '{keywords}' near '{target_location}'...")
 
     if not api_key or "YOUR_API_KEY_HERE" in api_key:
-        log("ERROR: GNews API Key not configured in config.ini.")
+        log("ERROR: GNews API Key not configured.")
         return
 
     keyword_string = f"({' OR '.join(keywords)})"
@@ -34,7 +32,7 @@ def hunt(target_info, credentials, log_queue, results_queue):
         data = response.json()
         articles = data.get("articles", [])
 
-        log(f"Search complete. Found {len(articles)} potential articles.")
+        log(f"Search complete. Found {len(articles)} articles.")
 
         for article in articles:
             lead = {
@@ -42,8 +40,8 @@ def hunt(target_info, credentials, log_queue, results_queue):
                 "title": article["title"],
                 "url": article["url"],
                 "text": f"{article['title']}\n\n{article.get('description', '')}\n\n{article.get('content', '')}",
+                "html": None,  # GNews doesn't provide full HTML
             }
-            # Put the found lead into the results queue for the main app to process
             results_queue.put(lead)
 
     except requests.exceptions.RequestException as e:

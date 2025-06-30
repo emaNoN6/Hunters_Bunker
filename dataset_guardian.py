@@ -10,6 +10,7 @@ import customtkinter as ctk
 # --- FIX: Adding missing imports for the standalone script's main block ---
 import threading
 import queue
+import config_manager
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")  # Classic terminal look
@@ -37,7 +38,7 @@ CASE_DIRS = [
     # You can add more folders here later
 ]
 NOT_CASE_DIR = "training_data/not_a_case"
-BALANCE_THRESHOLD = 0.95
+BALANCE_THRESHOLD = float(config_manager.get_config_value("General", "balance_threshold") or 0.97)
 CONTAMINATION_KEYWORDS = [
     "ghost",
     "haunted",
