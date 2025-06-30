@@ -1,3 +1,5 @@
+# FILE: hunter_app.py (DEFINITIVE, CLEANED VERSION)
+
 import customtkinter as ctk
 import threading
 import queue
@@ -7,13 +9,8 @@ import re
 import time
 import textwrap
 
-# You will need to install tkhtmlview: pip install tkhtmlview
 from tkhtmlview import HTMLLabel
-
-# You will need to install this: pip install customtkinter-tooltip
 from custom_widgets import OffsetToolTip
-
-# Our own custom tools
 import config_manager
 import actions_news_search
 
@@ -37,13 +34,13 @@ class HunterApp(ctk.CTk):
         # --- Window Setup ---
         self.title("Hunter's Command Console - Investigation Desk")
         self.geometry("1400x800")
-
         self.grid_columnconfigure(0, weight=2)
         self.grid_columnconfigure(1, weight=3)
         self.grid_rowconfigure(0, weight=1)
 
         # --- State & Communication ---
         self.is_searching = False
+        self.log_queue = queue.Queue()
         self.results_queue = queue.Queue()
         self.triage_items = []
 
@@ -51,9 +48,7 @@ class HunterApp(ctk.CTk):
         self.triage_frame = ctk.CTkFrame(self)
         self.triage_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.triage_frame.grid_columnconfigure(0, weight=1)
-        self.triage_frame.grid_rowconfigure(
-            3, weight=1
-        )  # The list inside should expand
+        self.triage_frame.grid_rowconfigure(3, weight=1)
 
         triage_label = ctk.CTkLabel(
             self.triage_frame, text="New Leads for Triage", font=self.title_font
@@ -68,11 +63,10 @@ class HunterApp(ctk.CTk):
         )
         self.search_button.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
-        # --- NEW: The Header Row ---
+        # --- Header Row ---
         header_frame = ctk.CTkFrame(self.triage_frame, fg_color="transparent")
         header_frame.grid(row=2, column=0, sticky="ew", padx=5)
-        header_frame.grid_columnconfigure(2, weight=1)  # Subject column expands
-
+        header_frame.grid_columnconfigure(2, weight=1)
         ctk.CTkLabel(header_frame, text="Case", font=self.header_font).grid(
             row=0, column=0, padx=5
         )
@@ -86,7 +80,7 @@ class HunterApp(ctk.CTk):
             header_frame, text="Source", font=self.header_font, anchor="e"
         ).grid(row=0, column=3, padx=10, sticky="e")
 
-        # --- The Scrollable List ---
+        # --- Scrollable List ---
         self.triage_scroll_frame = ctk.CTkScrollableFrame(
             self.triage_frame, label_text=""
         )
@@ -101,7 +95,7 @@ class HunterApp(ctk.CTk):
         )
         self.confirm_button.grid(row=4, column=0, sticky="ew", padx=10, pady=10)
 
-        # --- Right Pane: The Dossier Viewer ---
+        # --- Right Pane: Dossier Viewer ---
         self.detail_frame = ctk.CTkFrame(self)
         self.detail_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 10), pady=10)
         self.detail_frame.grid_columnconfigure(0, weight=1)
@@ -130,11 +124,9 @@ class HunterApp(ctk.CTk):
         self.after(100, self.process_queues)
 
     def add_triage_item(self, lead_data):
-        """Creates a row that uses our new, definitive tooltip."""
         item_frame = ctk.CTkFrame(self.triage_scroll_frame, fg_color="transparent")
         item_frame.grid(sticky="ew", padx=5, pady=2)
         item_frame.grid_columnconfigure(2, weight=1)
-
         triage_var = ctk.StringVar(value="none")
         rb_case = ctk.CTkRadioButton(
             item_frame, text="", variable=triage_var, value="case", width=20
@@ -142,42 +134,33 @@ class HunterApp(ctk.CTk):
         rb_not_case = ctk.CTkRadioButton(
             item_frame, text="", variable=triage_var, value="not_a_case", width=20
         )
-
         full_title = lead_data.get("title", "No Title")
-
         subject_label = ctk.CTkLabel(
             item_frame, text=full_title, anchor="w", cursor="hand2", font=self.main_font
         )
         subject_label.bind(
             "<Button-1>", lambda e, data=lead_data: self.display_lead_details(data)
         )
-
-        # Prepare the wrapped text for the tooltip
         wrapped_text = "\n".join(textwrap.wrap(full_title, width=80))
-
-        # Call our new, stable tooltip class
         OffsetToolTip(
             subject_label,
             message=wrapped_text,
             delay=0.5,
             font=self.main_font,
-            wraplength=600,  # pass wraplength as a kwarg
+            wraplength=600,
             x_offset=20,
             y_offset=10,
         )
-
         source_label = ctk.CTkLabel(
             item_frame,
             text=f"({lead_data.get('source', 'Unknown')})",
             text_color="gray",
             font=self.main_font,
         )
-
         rb_case.grid(row=0, column=0, padx=20, pady=5)
         rb_not_case.grid(row=0, column=1, padx=20, pady=5)
         subject_label.grid(row=0, column=2, padx=10, pady=5, sticky="w")
         source_label.grid(row=0, column=3, padx=10, pady=5, sticky="e")
-
         self.triage_items.append(
             {"frame": item_frame, "decision_var": triage_var, "data": lead_data}
         )
@@ -188,38 +171,14 @@ class HunterApp(ctk.CTk):
 
     def display_lead_details(self, lead_data):
         self.clear_detail_pane()
+        dark_bg = "#2B2B2B"
+        dark_fg = "#DCE4EE"
         if "html" in lead_data and lead_data["html"]:
-            original_html = lead_data["html"]
-
-            # Define our dark theme colors
-            dark_bg = "#2B2B2B"
-            dark_fg = "#DCE4EE"
-
-            # --- The Injection Spell ---
-            # We wrap the original HTML in a div with our own styling.
-            # This sets a base font size and a more readable text color.
-            styled_html = f"""
-            <html>
-              <body>
-                <div
-                  style="
-                    font-size: 32px;
-                    color: {dark_fg};
-                    background-color: {dark_bg};
-                    padding: 10px;">
-                  {original_html}
-                </div>
-              </body>
-            </html>
-            """
-
-            print(
-                f"[DETAILS]: Displaying HTML content for {lead_data.get('title', 'Unknown')}\n   [HTML]: {styled_html}"
-            )
-            html_frame = ctk.CTkScrollableFrame(self.detail_frame)
+            styled_html = f'<html><body><div style="font-size: 32px; color: {dark_fg}; background-color: {dark_bg}; padding: 10px;">{lead_data["html"]}</div></body></html>'
+            html_frame = ctk.CTkScrollableFrame(self.detail_frame, fg_color=dark_bg)
             html_frame.pack(expand=True, fill="both")
-            HTMLLabel(html_frame, html=styled_html).pack(
-                fill="both", padx=10, pady=10
+            HTMLLabel(html_frame, html=styled_html, background=dark_bg).pack(
+                fill="both", expand=True, padx=10, pady=10
             )
         else:
             text_box = ctk.CTkTextbox(
@@ -249,7 +208,8 @@ class HunterApp(ctk.CTk):
         self.search_button.configure(state="disabled")
         search_thread = threading.Thread(
             target=actions_news_search.run_all_searches,
-            args=(self.results_queue, self.results_queue),
+            # The correct call with both queues
+            args=(self.log_queue, self.results_queue),
             daemon=True,
         )
         search_thread.start()
@@ -272,7 +232,6 @@ class HunterApp(ctk.CTk):
                 )
                 self.file_for_retraining(item["data"])
                 items_to_remove.append(item)
-
         for item in items_to_remove:
             item["frame"].destroy()
             self.triage_items.remove(item)

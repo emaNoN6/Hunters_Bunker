@@ -5,6 +5,8 @@
 import configparser
 import os
 
+import yaml
+
 # Using the robust pathing from before
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # IMPORTANT: This assumes config.ini is in the MAIN project folder, one level UP from this file.
@@ -27,6 +29,24 @@ def create_default_config():
         }
         with open(CONFIG_FILE, "w") as configfile:
             config.write(configfile)
+
+
+def get_ignore_list():
+    """
+    Reads the ignore_list.yaml file and returns the parsed data.
+    Returns an empty list if the file doesn't exist.
+    """
+    try:
+        with open("ignore_list.yaml", "r") as f:
+            ignore_data = yaml.safe_load(f)
+            print("[CONFIG]: Successfully loaded ignore_list.yaml")
+            return ignore_data if ignore_data is not None else []
+    except FileNotFoundError:
+        print("[CONFIG]: ignore_list.yaml not found. No rules will be applied.")
+        return []
+    except Exception as e:
+        print(f"[CONFIG]: ERROR reading or parsing ignore_list.yaml: {e}")
+        return []
 
 
 def get_config_value(section, key):

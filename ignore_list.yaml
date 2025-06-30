@@ -1,0 +1,16 @@
+- podcast_name: "Lore"
+  ignore_keywords:
+    - "(remastered)"
+    - "deeper lore"
+    - "trailer"
+    - "introducing"
+    - "announcement"
+
+- podcast_name: "Unexplained"
+  ignore_keywords:
+    - "(rerun)"
+    - "extra:"
+    - "announcement"
+    - "q & a"
+
+# We can add new podcasts and their specific ignore rules here later.
