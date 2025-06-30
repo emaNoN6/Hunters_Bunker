@@ -22,3 +22,6 @@ training_data/
 
 # Ignore our secret config file
 config.ini
+
+#ignore my temporary files
+*.tmp
