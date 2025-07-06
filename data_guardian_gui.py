@@ -8,8 +8,8 @@ import wikipedia
 import config_manager
 
 # --- Configuration (can be adjusted here) ---
-CASE_DIRS = ["lore_transcripts", "g:\\My Drive\\Unexplained_Transcripts"]
-NOT_CASE_DIR = "training_data/not_a_case"
+CASE_DIRS = ["g:\\My Drive\\training_data\\lore_transcripts", "g:\\My Drive\\training_data\\Unexplained_Transcripts"]
+NOT_CASE_DIR = "g:\\My Drive\\training_data\\not_a_case"
 BALANCE_THRESHOLD = float(config_manager.get_config_value("General", "balance_threshold") or 0.97)
 CONTAMINATION_KEYWORDS = [
     "ghost",

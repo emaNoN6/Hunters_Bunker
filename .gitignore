@@ -25,3 +25,7 @@ config.ini
 
 #ignore my temporary files
 *.tmp
+
+# Ignore Gutenberg cache
+cache/
+texts/
