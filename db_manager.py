@@ -1,146 +1,156 @@
 # ==========================================================
-# Hunter's Command Console - Database Manager v3.0
-# This version implements a professional, versioned
-# database migration system.
+# Hunter's Command Console - Database Manager (PostgreSQL Edition)
+# v2.0 - Fixes the UUID type adaptation error.
 # ==========================================================
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import uuid
-
-# --- Configuration ---
-DB_FILE = "Hunters_Almanac.db"
-MIGRATIONS_DIR = "migrations"  # The folder for our SQL blueprints
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, DB_FILE)
-MIGRATIONS_PATH = os.path.join(BASE_DIR, MIGRATIONS_DIR)
+import config_manager
 
 # --- Helper Function for Connections ---
 
 
 def get_db_connection():
-    """A simple helper to create and return a database connection."""
+    """
+    Creates and returns a connection to the PostgreSQL database.
+    It reads credentials from the config.ini file.
+    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        db_creds = config_manager.get_pgsql_credentials()
+        if not db_creds:
+            print("[DB_MANAGER ERROR]: PostgreSQL credentials not found in config.ini")
+            return None
+
+        conn = psycopg2.connect(
+            host=db_creds["host"],
+            dbname=db_creds["dbname"],
+            user=db_creds["user"],
+            password=db_creds["password"],
+            port=db_creds.get("port", 5432),
+        )
         return conn
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Could not connect to database at {DB_PATH}: {e}")
+        print(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL database: {e}")
         return None
 
 
-# --- Migration Engine ---
+# --- Setup Function (For Verification) ---
 
 
-def get_db_version(cursor):
-    """Gets the current version of the database schema."""
-    cursor.execute("PRAGMA user_version;")
-    return cursor.fetchone()[0]
-
-
-def set_db_version(cursor, version):
-    """Sets the database schema version."""
-    # PRAGMA commands don't support parameter substitution, so we format carefully.
-    cursor.execute(f"PRAGMA user_version = {version};")
-
-
-def run_migrations(status_callback=None):
+def check_database_connection():
     """
-    The master ritual to check the database version and apply all
-    necessary migration scripts in order.
+    A simple function to test if we can connect to the database.
     """
-    if status_callback:
-        status_callback("Initializing database...")
+    conn = get_db_connection()
+    if conn:
+        print("[DB_MANAGER]: PostgreSQL connection successful.")
+        conn.close()
+        return True
+    else:
+        print("[DB_MANAGER]: PostgreSQL connection failed.")
+        return False
 
-    os.makedirs(MIGRATIONS_PATH, exist_ok=True)
 
+# --- Case Management Functions ---
+
+
+def add_case(lead_data):
+    """
+    Adds a confirmed lead to the 'cases' table in PostgreSQL.
+    """
     conn = get_db_connection()
     if not conn:
-        if status_callback:
-            status_callback("FATAL: Database connection failed.")
-        return
+        return None
+
+    if not lead_data.get("url"):
+        print("[DB_MANAGER WARNING]: Attempted to add a case with no URL. Aborting.")
+        return None
+
+    sql = """
+    INSERT INTO cases (public_uuid, title, url, source_name, full_text, full_html)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON CONFLICT (url) DO NOTHING
+    RETURNING id;
+    """
+
+    # --- THE FIX IS HERE ---
+    # We convert the UUID object to a string before sending it.
+    # PostgreSQL's UUID column is smart enough to parse this string correctly.
+    new_uuid = str(uuid.uuid4())
+    case_id = None
 
     try:
-        cursor = conn.cursor()
-
-        # Begin a transaction. If any migration fails, the whole thing rolls back.
-        cursor.execute("BEGIN TRANSACTION;")
-
-        current_version = get_db_version(cursor)
-        if status_callback:
-            status_callback(
-                f"Current DB version: {current_version}. Checking for migrations..."
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(
+                sql,
+                (
+                    new_uuid,  # Now passing a simple string
+                    lead_data.get("title", "No Title"),
+                    lead_data.get("url"),
+                    lead_data.get("source", "Unknown"),
+                    lead_data.get("text", ""),
+                    lead_data.get("html", ""),
+                ),
             )
 
-        print(f"[DB MIGRATOR]: Current DB version: {current_version}")
-
-        # Find all migration files and sort them numerically
-        migration_files = sorted(
-            [
-                f
-                for f in os.listdir(MIGRATIONS_PATH)
-                if f.endswith(".sql") and f.split("_")[0].isdigit()
-            ]
-        )
-
-        for filename in migration_files:
-            migration_version = int(filename.split("_")[0])
-
-            if migration_version > current_version:
-                print(f"[DB MIGRATOR]: Applying migration {filename}...")
-                if status_callback:
-                    status_callback(f"Applying migration {migration_version}...")
-
-                filepath = os.path.join(MIGRATIONS_PATH, filename)
-                with open(filepath, "r", encoding="utf-8") as f:
-                    sql_script = f.read()
-
-                cursor.executescript(sql_script)
-                set_db_version(cursor, migration_version)
-                conn.commit()  # Commit after each successful migration
-                current_version = migration_version  # Update our tracker
+            result = cursor.fetchone()
+            if result:
+                case_id = result["id"]
                 print(
-                    f"[DB MIGRATOR]: Successfully applied version {migration_version}."
+                    f"[DB_MANAGER]: Successfully filed new case: {lead_data.get('title')}"
                 )
+            else:
+                print(
+                    f"[DB_MANAGER]: Case already exists in archive: {lead_data.get('title')}"
+                )
+                cursor.execute(
+                    "SELECT id FROM cases WHERE url = %s", (lead_data.get("url"),)
+                )
+                existing_case = cursor.fetchone()
+                if existing_case:
+                    case_id = existing_case["id"]
 
-        # Final commit for the whole transaction if all went well.
-        conn.commit()
-        if status_callback:
-            status_callback("Database is up to date.")
-        print("[DB MIGRATOR]: All migrations applied. Database is up to date.")
+            conn.commit()
 
     except Exception as e:
-        print(f"[DB MIGRATOR ERROR]: A fatal error occurred during migration: {e}")
-        if status_callback:
-            status_callback(f"ERROR: Migration failed: {e}")
-        conn.rollback()  # Roll back any failed changes
+        print(f"[DB_MANAGER ERROR]: An error occurred adding a case: {e}")
+        conn.rollback()
     finally:
         if conn:
             conn.close()
 
-
-# --- Case Management Functions (Example) ---
-# We keep these separate from the migration logic.
-
-
-def add_case(lead_data):
-    """Adds a confirmed lead to the 'cases' table."""
-    conn = get_db_connection()
-    if not conn:
-        return None
-    # ... (rest of the function is the same as before) ...
-    # This is where all our other functions like add_source, get_cases etc. will live.
+    return case_id
 
 
 # --- Main Execution Block for Testing ---
 if __name__ == "__main__":
-    print("Running DB Manager directly for setup and testing...")
+    print("Running DB Manager directly for testing...")
 
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        print(f"Removed old database file for a clean test: {DB_FILE}")
+    if check_database_connection():
+        print("\n--- Testing add_case function ---")
+        test_lead = {
+            "title": "PG Test Case: River Serpent Sighting",
+            "url": "http://test.local/case/pg123",
+            "source": "PG Test Data",
+            "text": "A new serpent sighting has been reported.",
+            "html": "<p>A new serpent sighting has been reported.</p>",
+        }
 
-    run_migrations()
+        # Clean out the old test case for a clean run
+        conn = get_db_connection()
+        if conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM cases WHERE url = %s", (test_lead["url"],))
+            conn.commit()
+            conn.close()
 
-    # You can add test calls to other functions here
+        new_case_id = add_case(test_lead)
+        if new_case_id:
+            print(f"Test case added/found successfully with ID: {new_case_id}")
+
+        print("\n--- Testing duplicate prevention ---")
+        add_case(test_lead)
+
     print("\nDB Manager test complete.")

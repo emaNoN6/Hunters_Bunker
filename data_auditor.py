@@ -4,10 +4,10 @@ import re  # Import the regular expressions library
 
 # --- Configuration ---
 # The folder we are going to audit
-AUDIT_DIR = "training_data/not_a_case"
+AUDIT_DIR = "g:/My Drive/training_data/not_a_case"
 
 # Where to move suspicious files for your final judgment
-REVIEW_DIR = "training_data/needs_manual_review"
+REVIEW_DIR = "g:/My Drive/training_data/needs_manual_review"
 
 # --- NEW: Regex-Powered Keyword Patterns ---
 # This list now contains regex patterns.

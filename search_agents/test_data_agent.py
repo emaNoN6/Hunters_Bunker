@@ -1,28 +1,26 @@
+# search_agents/test_data_agent.py
+
 import json
 import os
 
 
-def hunt(target_info, credentials, log_queue, results_queue):
+def hunt(log_queue):
     """
-    Reads a JSON file and uses the provided queues to report back.
+    A simple test agent that reads leads from a local JSON file.
     """
-    target_file = target_info.get("target")
+    log_queue.put("[TEST AGENT]: Waking up. Reading local test file...")
 
-    log_queue.put(f"[TEST AGENT]: Deploying to firing range. Target: '{target_file}'")
-
-    if not os.path.exists(target_file):
-        log_queue.put(f"  - TEST ERROR: Target file '{target_file}' not found.")
-        return
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    json_path = os.path.join(base_dir, "test_leads.json")
 
     try:
-        with open(target_file, "r") as f:
-            leads = json.load(f)
-
-        log_queue.put(
-            f"  - TEST AGENT: Successfully loaded {len(leads)} known targets."
-        )
-        for lead in leads:
-            results_queue.put(lead)
-
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        log_queue.put(f"[TEST AGENT]: Found {len(data)} leads in test file.")
+        return data
+    except FileNotFoundError:
+        log_queue.put("[TEST AGENT ERROR]: test_leads.json not found.")
+        return []
     except Exception as e:
-        log_queue.put(f"  - TEST ERROR: Could not read or parse JSON file: {e}")
+        log_queue.put(f"[TEST AGENT ERROR]: Failed to read test file: {e}")
+        return []

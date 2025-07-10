@@ -102,3 +102,15 @@ def get_reddit_credentials():
         "[DEBUG] config_manager: One or more Reddit keys are missing or default. Returning empty dictionary."
     )
     return {}  # Return empty dict if not fully configured
+
+
+def get_pgsql_credentials():
+    """Reads the PostgreSQL credentials from the config.ini file."""
+    config = configparser.ConfigParser()
+    # Make sure CONFIG_PATH is defined at the top of your file
+    config.read(CONFIG_FILE)
+
+    if "PostgreSQL" in config:
+        return dict(config["PostgreSQL"])
+    else:
+        return None

@@ -1,38 +1,23 @@
 [
     {
-        "source": "TEST-DATA",
-        "title": "Report of strange humming sound near old power station",
-        "url": "http://test.case/1",
-        "text": "Multiple residents reported a low-frequency humming sound originating from the abandoned Monongahela Power Station last night. Police investigated but found no signs of entry or active machinery. EMF readings were reportedly off the charts."
+        "title": "Test Lead 1: Report of a Strange Howling",
+        "url": "http://test.local/case/test001",
+        "source": "Test Data",
+        "text": "A local farmer reported hearing strange, non-canine howling near the old mill. The sound was described as 'guttural and wrong.'",
+        "html": "<h1>Report of a Strange Howling</h1><p>A local farmer reported hearing strange, non-canine howling near the old mill. The sound was described as 'guttural and wrong.' Local authorities dismissed it as coyotes.</p>"
     },
     {
-        "source": "TEST-DATA",
-        "title": "Local Farmer's Prize Cow Found... In a Tree",
-        "url": "http://test.case/2",
-        "text": "Jedidiah Smith, a farmer known for his prize-winning cattle, found his prized cow 'Bessie' inexplicably located in the high branches of an oak tree this morning. There were no tracks, and the animal was unharmed but clearly distressed."
+        "title": "Test Lead 2: Flickering Lights at the Asylum",
+        "url": "http://test.local/case/test002",
+        "source": "Test Data",
+        "text": "Multiple witnesses saw lights flickering in the abandoned North Hills Asylum last Tuesday. Power has been cut to the building for over 20 years.",
+        "html": "<h1>Flickering Lights at the Asylum</h1><p>Multiple witnesses saw lights flickering in the abandoned North Hills Asylum last Tuesday. Power has been cut to the building for over 20 years. No signs of forced entry were found.</p>"
     },
     {
-        "source": "TEST-DATA",
-        "title": "Library Books on Arcane Symbols Vanish Overnight",
-        "url": "http://test.case/3",
-        "text": "The entire 'Occult & Ancient Symbols' section of the public library was found empty this morning. Security footage shows the books simply vanishing from the shelves around 3:00 AM. The night watchman reports feeling an unusual chill."
-    },
-    {
-        "source": "TEST-DATA",
-        "title": "Man Reports His Reflection Grinned At Him",
-        "url": "http://test.case/4",
-        "text": "A local man was taken in for observation after frantically reporting that his own reflection in his bathroom mirror grinned at him independently. He later smashed the mirror. This is the third such report in the tri-county area this month."
-    },
-    {
-        "source": "TEST-DATA",
-        "title": "Strange Lights Over Lake Erie",
-        "url": "http://test.case/5",
-        "text": "Residents along the shores of Lake Erie reported seeing a series of bright, pulsating lights in the sky last night. Witnesses described the lights as moving in a synchronized pattern before disappearing into the clouds."
-    },
-    {
-        "source": "TEST-DATA",
-        "title": "Mysterious Crop Circles Appear Overnight",
-        "url": "http://test.case/6",
-    "text": "A farmer in rural Ohio discovered intricate crop circles in his cornfield this morning. The patterns are unlike any seen before, with some claiming they resemble ancient runes. Local authorities are investigating."
+        "title": "Test Lead 3: Cold Spot in the Library",
+        "url": "http://test.local/case/test003",
+        "source": "Test Data",
+        "text": "A librarian at the city library has repeatedly reported an intense, localized cold spot in the history section, specifically near the town's founding records.",
+        "html": "<h1>Cold Spot in the Library</h1><p>A librarian at the city library has repeatedly reported an intense, localized cold spot in the history section, specifically near the town's founding records. Temperature readings have shown a consistent 15-degree drop in the affected area.</p>"
     }
 ]

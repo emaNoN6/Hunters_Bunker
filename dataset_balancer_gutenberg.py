@@ -13,8 +13,8 @@ from gutenbergpy import textget
 from gutenbergpy.gutenbergcache import GutenbergCache
 
 # --- Configuration ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname("G:\\My Drive\\")
 CASE_DIRECTORIES = [
     os.path.join(BASE_DIR, "lore_transcripts"),
     os.path.join(BASE_DIR, "Unexplained_Transcripts"),
@@ -64,6 +64,8 @@ def count_words_and_files(dir_list):
     total_words = 0
     total_files = 0
     for directory in dir_list:
+        directory_words = 0
+        directory_files = 0
         if not os.path.isdir(directory):
             continue
         for filename in os.listdir(directory):
@@ -71,10 +73,21 @@ def count_words_and_files(dir_list):
                 filepath = os.path.join(directory, filename)
                 try:
                     with open(filepath, "r", encoding="utf-8") as f:
-                        total_words += len(f.read().split())
+                        words = len(f.read().split())
+                        total_words += words
+                        directory_words += words
+                        directory_files += 1
                     total_files += 1
                 except Exception as e:
                     print(f"[BALANCER WARNING]: Could not read {filepath}: {e}")
+#        print(
+#            f"  -> Directory '{os.path.basename(directory)}' has {directory_files} files with {directory_words:,} words."
+#        )
+        print(
+            f"  -> Directory '{directory}' has {directory_files} files with {directory_words:,} words."
+        )
+        directory_words = 0  # Reset for next directory
+        directory_files = 0  # Reset for next directory
     return total_words, total_files
 
 
