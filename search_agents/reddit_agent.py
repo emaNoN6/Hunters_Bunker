@@ -1,42 +1,58 @@
-# This version now correctly provides both plain text for the AI
-# and clean HTML for the viewer.
+# search_agents/reddit_agent.py
 
 import praw
+import db_manager
+import config_manager
 
 
-def hunt(target_info, credentials, log_queue, results_queue):
-    def log(message):
-        log_queue.put(f"[REDDIT AGENT]: {message}")
+def hunt(log_queue, source):
+    """
+    Searches for new posts in a given subreddit.
+    """
+    subreddit_name = source.get("target")
+    source_id = source.get("id")
+    source_name = source.get("source_name")
 
-    subreddit_name = target_info.get("target")
-    reddit_creds = credentials.get("reddit_creds")
+    log_queue.put(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
 
-    log(f"Sweeping r/{subreddit_name} for new posts...")
+    reddit_creds = config_manager.get_reddit_credentials()
+    if not reddit_creds:
+        log_queue.put(
+            f"[{source_name} ERROR]: Reddit API credentials not found in config.ini"
+        )
+        return []
 
-    if not reddit_creds or not all(
-        k in reddit_creds for k in ["client_id", "client_secret", "user_agent"]
-    ):
-        log("ERROR: Reddit API credentials not fully configured.")
-        return
-
+    results = []
     try:
-        reddit = praw.Reddit(**reddit_creds)
+        reddit = praw.Reddit(
+            client_id=reddit_creds["client_id"],
+            client_secret=reddit_creds["client_secret"],
+            user_agent=reddit_creds["user_agent"],
+        )
+
         subreddit = reddit.subreddit(subreddit_name)
 
-        # We'll just grab the newest posts for now.
+        # We only look at the 25 newest posts to keep the search fast.
         for submission in subreddit.new(limit=25):
-            # --- THE UPGRADE ---
-            # We now create a lead dictionary with both text and html.
-            lead = {
-                "source": f"Reddit (r/{subreddit_name})",
-                "title": submission.title,
-                "url": f"https://reddit.com{submission.permalink}",
-                "text": f"{submission.title}\n\n{submission.selftext}",  # For the AI model
-                "html": submission.selftext_html,  # For the GUI viewer
-            }
-            results_queue.put(lead)
+            # Check if we've already processed this post
+            if db_manager.check_acquisition_log(submission.url):
+                continue
 
-        log(f"Sweep complete for r/{subreddit_name}.")
+            lead_data = {
+                "title": submission.title,
+                "url": submission.url,
+                "source": f"r/{subreddit_name}",
+                "text": submission.selftext,
+                "html": f"<h1>{submission.title}</h1><p>{submission.selftext_html}</p>",
+            }
+            results.append(lead_data)
+            db_manager.log_acquisition(
+                submission.url, source_id, submission.title, "PROCESSED"
+            )
+
+        log_queue.put(f"[{source_name}]: Found {len(results)} new leads.")
+        return results
 
     except Exception as e:
-        log(f"FATAL ERROR: Could not connect or search r/{subreddit_name} - {e}")
+        log_queue.put(f"[{source_name} ERROR]: {e}")
+        return []

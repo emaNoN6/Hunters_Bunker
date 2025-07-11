@@ -4,14 +4,18 @@ import json
 import os
 
 
-def hunt(log_queue):
+# The hunt function now accepts the 'source' dictionary as an argument
+def hunt(log_queue, source):
     """
     A simple test agent that reads leads from a local JSON file.
     """
     log_queue.put("[TEST AGENT]: Waking up. Reading local test file...")
 
+    # The target file is now defined in the database
+    target_file = source.get("target", "test_leads.json")
+
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    json_path = os.path.join(base_dir, "test_leads.json")
+    json_path = os.path.join(base_dir, target_file)
 
     try:
         with open(json_path, "r", encoding="utf-8") as f:
@@ -19,7 +23,7 @@ def hunt(log_queue):
         log_queue.put(f"[TEST AGENT]: Found {len(data)} leads in test file.")
         return data
     except FileNotFoundError:
-        log_queue.put("[TEST AGENT ERROR]: test_leads.json not found.")
+        log_queue.put(f"[TEST AGENT ERROR]: {target_file} not found.")
         return []
     except Exception as e:
         log_queue.put(f"[TEST AGENT ERROR]: Failed to read test file: {e}")

@@ -1,6 +1,6 @@
 # ==========================================================
 # Hunter's Command Console - Database Manager (PostgreSQL Edition)
-# v2.0 - Fixes the UUID type adaptation error.
+# v2.1 - Complete version with all functions implemented.
 # ==========================================================
 
 import psycopg2
@@ -8,15 +8,13 @@ import psycopg2.extras
 import os
 import uuid
 import config_manager
+from datetime import datetime
 
 # --- Helper Function for Connections ---
 
 
 def get_db_connection():
-    """
-    Creates and returns a connection to the PostgreSQL database.
-    It reads credentials from the config.ini file.
-    """
+    """Creates and returns a connection to the PostgreSQL database."""
     try:
         db_creds = config_manager.get_pgsql_credentials()
         if not db_creds:
@@ -40,9 +38,7 @@ def get_db_connection():
 
 
 def check_database_connection():
-    """
-    A simple function to test if we can connect to the database.
-    """
+    """A simple function to test if we can connect to the database."""
     conn = get_db_connection()
     if conn:
         print("[DB_MANAGER]: PostgreSQL connection successful.")
@@ -53,13 +49,133 @@ def check_database_connection():
         return False
 
 
+# --- Source Management Functions ---
+
+
+def add_source(source_data):
+    """Adds a new intelligence source to the database."""
+    sql = """
+    INSERT INTO sources (source_name, source_type, target, strategy, keywords, purpose)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON CONFLICT (source_name) DO NOTHING;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                sql,
+                (
+                    source_data["source_name"],
+                    source_data["source_type"],
+                    source_data["target"],
+                    source_data.get("strategy"),
+                    source_data.get("keywords"),
+                    source_data.get("purpose", "lead_generation"),
+                ),
+            )
+            conn.commit()
+            print(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_active_lead_sources():
+    """Retrieves all sources marked for lead generation."""
+    sql = (
+        "SELECT * FROM sources WHERE is_active = TRUE AND purpose = 'lead_generation';"
+    )
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql)
+            sources = cursor.fetchall()
+            return [dict(row) for row in sources]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get active sources: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_source_check_time(source_id):
+    """Updates the last_checked_date for a source."""
+    sql = "UPDATE sources SET last_checked_date = %s WHERE id = %s;"
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (datetime.now(), source_id))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to update source check time: {e}")
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+# --- Acquisition Log Functions ---
+
+
+def check_acquisition_log(item_url):
+    """Checks if an item has already been processed or ignored."""
+    sql = "SELECT status FROM acquisition_log WHERE item_url = %s;"
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (item_url,))
+            result = cursor.fetchone()
+            return result["status"] if result else None
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to check acquisition log: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def log_acquisition(item_url, source_id, title, status, notes=""):
+    """Logs an item to the acquisition_log."""
+    sql = """
+    INSERT INTO acquisition_log (item_url, source_id, title, status, notes)
+    VALUES (%s, %s, %s, %s, %s)
+    ON CONFLICT (item_url) DO UPDATE SET
+        status = EXCLUDED.status,
+        notes = EXCLUDED.notes,
+        process_date = CURRENT_TIMESTAMP;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (item_url, source_id, title, status, notes))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to log acquisition: {e}")
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
 # --- Case Management Functions ---
 
 
 def add_case(lead_data):
-    """
-    Adds a confirmed lead to the 'cases' table in PostgreSQL.
-    """
+    """Adds a confirmed lead to the 'cases' table in PostgreSQL."""
     conn = get_db_connection()
     if not conn:
         return None
@@ -75,9 +191,6 @@ def add_case(lead_data):
     RETURNING id;
     """
 
-    # --- THE FIX IS HERE ---
-    # We convert the UUID object to a string before sending it.
-    # PostgreSQL's UUID column is smart enough to parse this string correctly.
     new_uuid = str(uuid.uuid4())
     case_id = None
 
@@ -86,7 +199,7 @@ def add_case(lead_data):
             cursor.execute(
                 sql,
                 (
-                    new_uuid,  # Now passing a simple string
+                    new_uuid,
                     lead_data.get("title", "No Title"),
                     lead_data.get("url"),
                     lead_data.get("source", "Unknown"),
@@ -129,28 +242,38 @@ if __name__ == "__main__":
     print("Running DB Manager directly for testing...")
 
     if check_database_connection():
-        print("\n--- Testing add_case function ---")
-        test_lead = {
-            "title": "PG Test Case: River Serpent Sighting",
-            "url": "http://test.local/case/pg123",
-            "source": "PG Test Data",
-            "text": "A new serpent sighting has been reported.",
-            "html": "<p>A new serpent sighting has been reported.</p>",
+        # Add a test source to the database
+        test_source = {
+            "source_name": "Test Data Source",
+            "source_type": "test_data",
+            "target": "test_leads.json",
+            "purpose": "lead_generation",
         }
+        add_source(test_source)
 
-        # Clean out the old test case for a clean run
-        conn = get_db_connection()
-        if conn:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM cases WHERE url = %s", (test_lead["url"],))
-            conn.commit()
-            conn.close()
+        # Fetch and print the active sources
+        active_sources = get_active_lead_sources()
+        print(f"\nFound {len(active_sources)} active sources:")
+        for source in active_sources:
+            print(
+                f"  - {source['source_name']} (ID: {source['id']}, Type: {source['source_type']})"
+            )
 
-        new_case_id = add_case(test_lead)
-        if new_case_id:
-            print(f"Test case added/found successfully with ID: {new_case_id}")
+        # Test the acquisition log
+        test_url = "http://test.local/case/test001"
+        print(f"\nChecking log for: {test_url}")
+        status = check_acquisition_log(test_url)
+        print(f"  -> Status: {status}")
 
-        print("\n--- Testing duplicate prevention ---")
-        add_case(test_lead)
+        print(f"Logging item as 'PROCESSED'...")
+        # Make sure we have a source to get an ID from
+        if active_sources:
+            log_acquisition(
+                test_url, active_sources[0]["id"], "Test Lead 1", "PROCESSED"
+            )
+            status = check_acquisition_log(test_url)
+            print(f"  -> New Status: {status}")
+        else:
+            print("  -> Skipping log test, no sources found.")
 
     print("\nDB Manager test complete.")

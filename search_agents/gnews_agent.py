@@ -1,48 +1,47 @@
-# Now accepts a standard set of arguments for consistency.
+# search_agents/gnews_agent.py
 
-import requests
+from gnews import GNews
+import db_manager
 
 
-def hunt(target_info, credentials, log_queue, results_queue):
+def hunt(log_queue, source):
     """
-    Performs a real search using the GNews API.
-    'credentials' is a dictionary that holds all API keys.
+    Searches for news articles using the GNews library based on keywords.
     """
+    keyword = source.get("target")
+    source_id = source.get("id")
+    source_name = source.get("source_name")
 
-    def log(message):
-        log_queue.put(f"[GNEWS AGENT]: {message}")
+    log_queue.put(f"[{source_name}]: Waking up. Searching for '{keyword}'...")
 
-    target_location = target_info.get("target")
-    keywords = target_info.get("keywords")
-    api_key = credentials.get("gnews_api_key")
-
-    log(f"Searching for '{keywords}' near '{target_location}'...")
-
-    if not api_key or "YOUR_API_KEY_HERE" in api_key:
-        log("ERROR: GNews API Key not configured.")
-        return
-
-    keyword_string = f"({' OR '.join(keywords)})"
-    query = f'"{target_location}" AND {keyword_string}'
-    url = f"https://gnews.io/api/v4/search?q={query}&lang=en&country=us&max=10&apikey={api_key}"
-
+    results = []
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        articles = data.get("articles", [])
+        google_news = GNews(language="en", country="US", period="7d")
+        news = google_news.get_news(keyword)
 
-        log(f"Search complete. Found {len(articles)} articles.")
+        log_queue.put(f"[{source_name}]: Found {len(news)} potential leads.")
 
-        for article in articles:
-            lead = {
-                "source": f"GNews ({target_location})",
-                "title": article["title"],
-                "url": article["url"],
-                "text": f"{article['title']}\n\n{article.get('description', '')}\n\n{article.get('content', '')}",
-                "html": None,  # GNews doesn't provide full HTML
+        for item in news:
+            # Check if we've already processed this article
+            if db_manager.check_acquisition_log(item["url"]):
+                continue
+
+            lead_data = {
+                "title": item["title"],
+                "url": item["url"],
+                "source": source_name,
+                "text": item["description"],
+                "html": f"<h1>{item['title']}</h1><p>{item['description']}</p><p><a href='{item['url']}' target='_blank'>Read More</a></p>",
             }
-            results_queue.put(lead)
+            results.append(lead_data)
+            # Log this item so we don't process it again
+            db_manager.log_acquisition(
+                item["url"], source_id, item["title"], "PROCESSED"
+            )
 
-    except requests.exceptions.RequestException as e:
-        log(f"FATAL ERROR: Network or API error - {e}")
+        return results
+
+    except Exception as e:
+        log_queue.put(f"[{source_name} ERROR]: {e}")
+        # Here we would update the source's failure count in a real scenario
+        return []

@@ -1,18 +1,14 @@
 # actions_news_search.py
 
 import db_manager
-from search_agents import test_data_agent
-
-# We will import our other agents here later, like:
-# from search_agents import reddit_agent
-# from search_agents import gnews_agent
+from search_agents import test_data_agent, gnews_agent, reddit_agent
 
 # This dictionary maps the 'source_type' from our database
 # to the actual agent module that knows how to handle it.
 AGENT_DISPATCH_TABLE = {
     "test_data": test_data_agent,
-    # "reddit": reddit_agent,
-    # "gnews": gnews_agent
+    "gnews": gnews_agent,
+    "reddit": reddit_agent,
 }
 
 
@@ -23,16 +19,18 @@ def search_all_sources(log_queue):
     """
     log_queue.put("[DISPATCHER]: Beginning search operation.")
 
-    # For now, we'll use a hardcoded list for testing.
-    # Later, this will come from db_manager.get_active_sources()
-    # active_sources = db_manager.get_active_sources()
-    active_sources = [{"source_name": "Test Data Source", "source_type": "test_data"}]
+    log_queue.put("[DISPATCHER]: Querying database for active sources...")
+    active_sources = db_manager.get_active_lead_sources()
 
     all_results = []
 
     if not active_sources:
-        log_queue.put("[DISPATCHER]: No active sources found in database.")
+        log_queue.put(
+            "[DISPATCHER]: No active lead generation sources found in database."
+        )
         return []
+
+    log_queue.put(f"[DISPATCHER]: Found {len(active_sources)} active source(s).")
 
     for source in active_sources:
         source_type = source.get("source_type")
@@ -43,10 +41,17 @@ def search_all_sources(log_queue):
                 f"[DISPATCHER]: Dispatching '{source.get('source_name')}' agent..."
             )
             try:
-                # We call the 'hunt' function for the matched agent
-                results = agent_module.hunt(log_queue)
+                # We now pass the full source dictionary to the agent
+                results = agent_module.hunt(log_queue, source)
+
+                # The agent itself now handles checking the acquisition log,
+                # so we just extend the results.
                 if results:
                     all_results.extend(results)
+
+                # Update the source's last checked time
+                db_manager.update_source_check_time(source["id"])
+
             except Exception as e:
                 log_queue.put(
                     f"[DISPATCHER ERROR]: Agent '{source.get('source_name')}' failed: {e}"
@@ -56,7 +61,5 @@ def search_all_sources(log_queue):
                 f"[DISPATCHER WARNING]: No agent found for source type '{source_type}'."
             )
 
-    log_queue.put(
-        f"[DISPATCHER]: Search complete. Found {len(all_results)} total leads."
-    )
+    log_queue.put(f"[DISPATCHER]: Search complete. Found {len(all_results)} new leads.")
     return all_results
