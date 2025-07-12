@@ -14,6 +14,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Example: If config_manager.py is in 'Hunters_Bunker/', the path is correct.
 # If config_manager.py is in 'Hunters_Bunker/some_subfolder/', the path is correct.
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.ini")
+print(f"[DEBUG] config_manager: Using CONFIG_FILE at: {CONFIG_FILE}")
 
 
 def create_default_config():

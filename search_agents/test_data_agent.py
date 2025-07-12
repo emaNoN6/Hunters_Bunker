@@ -15,7 +15,8 @@ def hunt(log_queue, source):
     target_file = source.get("target", "test_leads.json")
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    json_path = os.path.join(base_dir, target_file)
+    json_path = os.path.join(base_dir, "data", target_file)
+    print(f"[TEST AGENT]: Looking for test file at {json_path}")
 
     try:
         with open(json_path, "r", encoding="utf-8") as f:

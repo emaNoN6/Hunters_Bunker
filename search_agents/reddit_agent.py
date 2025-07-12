@@ -1,8 +1,8 @@
 # search_agents/reddit_agent.py
 
 import praw
-import db_manager
-import config_manager
+from hunter import db_manager
+from hunter import config_manager
 
 
 def hunt(log_queue, source):

@@ -1,6 +1,6 @@
 # actions_news_search.py
 
-import db_manager
+from . import db_manager
 from search_agents import test_data_agent, gnews_agent, reddit_agent, gnews_io_agent
 
 # This dictionary maps the 'source_type' from our database

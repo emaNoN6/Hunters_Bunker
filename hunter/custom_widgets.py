@@ -1,14 +1,16 @@
-# This file will hold our custom-forged tools. We're keeping our
-# workshop clean and organized.
+# hunter/custom_widgets.py
 
 import customtkinter as ctk
-from CTkToolTip import CTkToolTip as _BaseToolTip
 
 
+# ==========================================================
+# OffsetToolTip
+# A custom tooltip that can be offset from the cursor.
+# ==========================================================
 class OffsetToolTip:
     """
     A completely custom tooltip implementation that gives us full control
-    over positioning and behavior, solving all previous bugs.
+    over positioning and behavior.
     """
 
     def __init__(
@@ -20,19 +22,27 @@ class OffsetToolTip:
         y_offset: int = 10,
         **kwargs,
     ):
-
         self.widget = widget
-        self.message = message
+
+        # --- THE FIX IS HERE ---
+        # This logic correctly handles the 'text' argument.
+        # It checks if 'text' was passed in the keyword arguments (**kwargs).
+        # If it was, it uses that value for the message and removes it
+        # from kwargs to prevent it from being passed twice.
+        # If not, it uses the 'message' parameter as a fallback.
+        self.message = kwargs.pop("text", message)
+
         self.delay = delay
         self.x_offset = x_offset
         self.y_offset = y_offset
-        self.kwargs = kwargs
+        self.kwargs = kwargs  # kwargs now no longer contains 'text'
 
         self.tooltip_window = None
         self._display_after_id = None
 
         self.widget.bind("<Enter>", self._on_enter, add="+")
         self.widget.bind("<Leave>", self._on_leave, add="+")
+        self.widget.bind("<Button-1>", self._on_leave, add="+")  # Also hide on click
 
     def _on_enter(self, event=None):
         """Schedules the tooltip to be displayed."""
@@ -66,10 +76,8 @@ class OffsetToolTip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{int(x)}+{int(y)}")
 
-        # --- THE FIX IS HERE ---
-        # We create the label and simply unpack our kwargs.
-        # The wraplength is already inside self.kwargs if it was passed.
+        # This call is now safe because we've removed the duplicate 'text' key
         label = ctk.CTkLabel(
             master=tw, text=self.message, justify="left", **self.kwargs
-        )  # Unpack the stored kwargs here
+        )
         label.pack(padx=(10, 10), pady=(4, 4))

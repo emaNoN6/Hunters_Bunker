@@ -1,7 +1,7 @@
 # search_agents/gnews_agent.py
 
 from gnews import GNews
-import db_manager
+from hunter import db_manager
 
 
 def hunt(log_queue, source):

@@ -12,13 +12,17 @@ import re
 import time
 import textwrap
 from tkhtmlview import HTMLLabel
-from custom_widgets import OffsetToolTip
 from datetime import datetime  # <-- THE FIX IS HERE
 
 # --- Our Custom Tools ---
-import config_manager
-import actions_news_search
-import db_manager
+# These imports are now relative to the 'hunter' package.
+from . import config_manager
+from . import actions_news_search
+from . import db_manager
+from .custom_widgets import OffsetToolTip
+
+# We also need to specify the html_parsers package now
+#from html_parsers import html_sanitizer, link_extractor
 
 # --- GUI Configuration ---
 ctk.set_appearance_mode("Dark")
@@ -33,7 +37,7 @@ class HunterApp(ctk.CTk):
 
         # --- Window Setup ---
         self.title("Hunter's Command Console")
-        self.geometry("1400x900")
+        self.geometry("1200x800")
 
         # --- Font Definitions ---
         self.main_font = ctk.CTkFont(family="Courier New", size=14)

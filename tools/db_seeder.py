@@ -1,6 +1,16 @@
 # db_seeder.py
 
-import db_manager
+import os
+import sys
+from hunter import db_manager
+
+# --- Pathing Magic ---
+# This tells the script to look one directory up (to the main project root)
+# so it can find our 'hunter' package.
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
+# --- End Magic ---
+
 
 # This script populates the 'sources' table with our initial hunting grounds.
 # It's designed to be run once.

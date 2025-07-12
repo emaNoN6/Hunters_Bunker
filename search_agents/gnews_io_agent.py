@@ -1,8 +1,8 @@
 # search_agents/gnews_io_agent.py
 
 import requests
-import db_manager
-import config_manager
+from hunter import db_manager
+from hunter import config_manager
 import time
 
 # The base URL for the gnews.io API

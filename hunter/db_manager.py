@@ -7,7 +7,7 @@ import psycopg2
 import psycopg2.extras
 import os
 import uuid
-import config_manager
+from hunter import config_manager
 from datetime import datetime
 
 # --- Helper Function for Connections ---
