@@ -1,13 +1,14 @@
 # actions_news_search.py
 
 import db_manager
-from search_agents import test_data_agent, gnews_agent, reddit_agent
+from search_agents import test_data_agent, gnews_agent, reddit_agent, gnews_io_agent
 
 # This dictionary maps the 'source_type' from our database
 # to the actual agent module that knows how to handle it.
 AGENT_DISPATCH_TABLE = {
     "test_data": test_data_agent,
     "gnews": gnews_agent,
+    "gnews_io": gnews_io_agent,
     "reddit": reddit_agent,
 }
 
