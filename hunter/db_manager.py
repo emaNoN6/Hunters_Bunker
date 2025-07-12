@@ -237,6 +237,26 @@ def add_case(lead_data):
     return case_id
 
 
+def get_random_cases_for_testing(limit=20):
+    """Fetches a random sample of cases from the database for testing."""
+    sql = "SELECT * FROM cases WHERE full_html IS NOT NULL ORDER BY RANDOM() LIMIT %s;"
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (limit,))
+            cases = cursor.fetchall()
+            # Convert the results to a list of standard dicts
+            return [dict(row) for row in cases]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get random cases: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
 # --- Main Execution Block for Testing ---
 if __name__ == "__main__":
     print("Running DB Manager directly for testing...")

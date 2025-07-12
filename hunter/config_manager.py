@@ -1,117 +1,117 @@
-# FILE 1: config_manager.py (WITH DEBUG LOGGING)
-# ===============================================
-# We've added print statements to see exactly what this file is reading.
+# hunter/config_manager.py
+
+# ==========================================================
+# Hunter's Command Console - Configuration Manager v2.0
+# This definitive version loads the config file only once
+# for improved performance and cleaner code.
+# ==========================================================
 
 import configparser
 import os
 
-import yaml
-
-# Using the robust pathing from before
+# --- Configuration ---
+# Define the path to the config file relative to this script's location.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# IMPORTANT: This assumes config.ini is in the MAIN project folder, one level UP from this file.
-# If your config.ini is in the same folder as this script, remove the '..'
-# Example: If config_manager.py is in 'Hunters_Bunker/', the path is correct.
-# If config_manager.py is in 'Hunters_Bunker/some_subfolder/', the path is correct.
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.ini")
-print(f"[DEBUG] config_manager: Using CONFIG_FILE at: {CONFIG_FILE}")
+
+# --- The "Single Load" Pattern ---
+# We create a single, module-level config object.
+_config = configparser.ConfigParser()
+# We read the file right when this module is first imported.
+_config.read(CONFIG_FILE)
 
 
-def create_default_config():
-    """If config.ini doesn't exist, create it with default values."""
+# --- Default Creation Function ---
+def create_default_config_if_needed():
+    """If config.ini doesn't exist, create it with all necessary sections and default values."""
     if not os.path.exists(CONFIG_FILE):
-        print("config.ini not found. Creating a default one.")
-        config = configparser.ConfigParser()
-        config["GNews"] = {"api_key": "YOUR_API_KEY_HERE"}
-        config["Reddit"] = {
+        print("[CONFIG_MANAGER]: config.ini not found. Creating a default one.")
+
+        default_config = configparser.ConfigParser()
+
+        # Add all the sections we've planned for.
+        default_config["Debug"] = {"debug_mode": "False"}
+        default_config["GUI"] = {
+            "font_family": "Courier New",
+            "font_size": "14",
+            "dark_bg": "#242424",
+            "dark_gray": "#2b2b2b",
+            "text_color": "#E0E0E0",
+            "accent_color": "#A9D1F5",
+        }
+        default_config["General"] = {"balance_threshold": "0.95"}
+        default_config["PostgreSQL"] = {
+            "host": "localhost",
+            "port": "5432",
+            "dbname": "hunters_almanac",
+            "user": "hunter_app_user",
+            "password": "YOUR_PASSWORD_HERE",
+        }
+        default_config["GNewsIO"] = {"api_key": "YOUR_GNEWS.IO_API_KEY_HERE"}
+        default_config["Reddit"] = {
             "client_id": "YOUR_REDDIT_CLIENT_ID",
             "client_secret": "YOUR_REDDIT_CLIENT_SECRET",
-            "user_agent": "hunters_console_v0.1_by_your_username",
+            "user_agent": "hunters_console/v0.1 by your_username",
         }
+
         with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
+            default_config.write(configfile)
+
+        # After creating, we need to re-read it into our main config object.
+        _config.read(CONFIG_FILE)
 
 
-def get_ignore_list():
-    """
-    Reads the ignore_list.yaml file and returns the parsed data.
-    Returns an empty list if the file doesn't exist.
-    """
-    try:
-        with open("ignore_list.yaml", "r") as f:
-            ignore_data = yaml.safe_load(f)
-            print("[CONFIG]: Successfully loaded ignore_list.yaml")
-            return ignore_data if ignore_data is not None else []
-    except FileNotFoundError:
-        print("[CONFIG]: ignore_list.yaml not found. No rules will be applied.")
-        return []
-    except Exception as e:
-        print(f"[CONFIG]: ERROR reading or parsing ignore_list.yaml: {e}")
-        return []
+# --- Getter Functions ---
+# All these functions are now lightning fast because they just read
+# from the _config object that's already in memory.
 
 
-def get_config_value(section, key):
-    config = configparser.ConfigParser()
-    files_read = config.read(CONFIG_FILE)
-    if not files_read:
-        # This debug line is critical
-        print(
-            f"[DEBUG] config_manager: FAILED to read config file at path: {os.path.abspath(CONFIG_FILE)}"
-        )
-        return None
-    try:
-        return config.get(section, key)
-    except (configparser.NoSectionError, configparser.NoOptionError):
-        return None
+def is_debug_mode():
+    """Check if the application is running in debug mode."""
+    return _config.getboolean("Debug", "debug_mode", fallback=False)
 
 
-def get_gnews_api_key():
-    return get_config_value("GNews", "api_key")
+def get_gui_config():
+    """Reads the GUI configuration settings."""
+    if "GUI" in _config:
+        return dict(_config["GUI"])
+    return {}
 
 
-def get_reddit_credentials():
-    """
-    This function now has heavy logging to see what it's doing.
-    """
-    print("[DEBUG] config_manager: Attempting to get Reddit credentials...")
-
-    client_id = get_config_value("Reddit", "client_id")
-    client_secret = get_config_value("Reddit", "client_secret")
-    user_agent = get_config_value("Reddit", "user_agent")
-
-    # Print exactly what we found (or didn't find)
-    print(f"[DEBUG] config_manager: Found client_id: '{client_id}'")
-    print(f"[DEBUG] config_manager: Found client_secret: '{client_secret}'")
-    print(f"[DEBUG] config_manager: Found user_agent: '{user_agent}'")
-
-    # Check if any of the values are None or the default placeholder
-    if all(
-        val and "YOUR_" not in val and val is not None
-        for val in [client_id, client_secret, user_agent]
-    ):
-        creds = {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "user_agent": user_agent,
-        }
-        print(
-            "[DEBUG] config_manager: All Reddit keys found. Returning credentials dictionary."
-        )
-        return creds
-
-    print(
-        "[DEBUG] config_manager: One or more Reddit keys are missing or default. Returning empty dictionary."
-    )
-    return {}  # Return empty dict if not fully configured
+def get_general_config():
+    """Reads the general configuration settings."""
+    if "General" in _config:
+        return dict(_config["General"])
+    return {}
 
 
 def get_pgsql_credentials():
-    """Reads the PostgreSQL credentials from the config.ini file."""
-    config = configparser.ConfigParser()
-    # Make sure CONFIG_PATH is defined at the top of your file
-    config.read(CONFIG_FILE)
+    """Reads the PostgreSQL credentials."""
+    if "PostgreSQL" in _config:
+        return dict(_config["PostgreSQL"])
+    return None
 
-    if "PostgreSQL" in config:
-        return dict(config["PostgreSQL"])
-    else:
-        return None
+
+def get_gnews_io_credentials():
+    """Reads the GNews.io credentials."""
+    if "GNewsIO" in _config:
+        return dict(_config["GNewsIO"])
+    return None
+
+
+def get_reddit_credentials():
+    """Reads the Reddit credentials."""
+    if "Reddit" in _config:
+        creds = dict(_config["Reddit"])
+        # Check if the values are placeholders
+        if "YOUR_" in creds.get("client_id", "") or "YOUR_" in creds.get(
+            "client_secret", ""
+        ):
+            return None
+        return creds
+    return None
+
+
+# --- Initial Setup ---
+# Run the check to create the default config when this module is first loaded.
+create_default_config_if_needed()

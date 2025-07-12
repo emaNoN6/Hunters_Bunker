@@ -22,7 +22,7 @@ from . import db_manager
 from .custom_widgets import OffsetToolTip
 
 # We also need to specify the html_parsers package now
-#from html_parsers import html_sanitizer, link_extractor
+# from html_parsers import html_sanitizer, link_extractor
 
 # --- GUI Configuration ---
 ctk.set_appearance_mode("Dark")
@@ -136,7 +136,14 @@ class HunterApp(ctk.CTk):
         search_thread.start()
 
     def run_search(self):
-        results = actions_news_search.search_all_sources(self.log_queue)
+        if config_manager.is_debug_mode():
+            self.log_message(
+                "[APP DEBUG]: Running in debug mode. Fetching test cases from archive..."
+            )
+            results = db_manager.get_random_cases_for_testing(20)
+        else:
+            self.log_message("[APP]: Hunter dispatched. Searching for new cases...")
+            results = actions_news_search.search_all_sources(self.log_queue)
         self.after(0, self.populate_triage_list, results)
         self.after(0, lambda: self.search_button.configure(state="normal"))
         self.log_message("[APP]: All agents have returned.")
