@@ -68,7 +68,9 @@ def create_default_config_if_needed():
 
 def is_debug_mode():
     """Check if the application is running in debug mode."""
-    return _config.getboolean("Debug", "debug_mode", fallback=False)
+    is_debug_mode = _config.getboolean("Debug", "debug_mode", fallback=False)
+    print(f"[CONFIG_MANAGER]: Debug mode is {'enabled' if is_debug_mode else 'disabled'}.")
+    return is_debug_mode
 
 
 def get_gui_config():

@@ -29,3 +29,4 @@ config.ini
 # Ignore Gutenberg cache
 cache/
 texts/
+data

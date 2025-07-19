@@ -1,16 +1,14 @@
-# db_seeder.py
+# tools/db_seeder.py
 
 import os
 import sys
-from hunter import db_manager
 
 # --- Pathing Magic ---
-# This tells the script to look one directory up (to the main project root)
-# so it can find our 'hunter' package.
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 # --- End Magic ---
 
+from hunter import db_manager
 
 # This script populates the 'sources' table with our initial hunting grounds.
 # It's designed to be run once.
@@ -21,6 +19,19 @@ def seed_database():
     print("[SEEDER]: Populating database with initial sources...")
 
     sources_to_add = [
+        # --- Podcast Agents ---
+        {
+            "source_name": "Lore Podcast",
+            "source_type": "rss",
+            "target": "https://feeds.libsyn.com/65267/rss",
+            "purpose": "training_material",
+        },
+        {
+            "source_name": "Unexplained Podcast",
+            "source_type": "pocketcasts_json",
+            "target": "https://podcasts.pocketcasts.com/f96fb8d0-a70d-0133-2dfa-6dc413d6d41d/episodes_full_1751585827.json",
+            "purpose": "training_material",
+        },
         # --- Reddit Agents ---
         {
             "source_name": "Reddit Paranormal",
@@ -43,17 +54,17 @@ def seed_database():
             "strategy": "newest_posts",
             "purpose": "lead_generation",
         },
-        # --- GNews Agents ---
+        # --- GNews.io Agents ---
         {
-            "source_name": "GNews - Strange Disappearance",
-            "source_type": "gnews",
-            "target": "strange disappearance",  # The search keyword
+            "source_name": "GNews.io - Strange Disappearance",
+            "source_type": "gnews_io",
+            "target": '"strange disappearance"',
             "purpose": "lead_generation",
         },
         {
-            "source_name": "GNews - Unexplained Phenomena",
-            "source_type": "gnews",
-            "target": "unexplained phenomena",
+            "source_name": "GNews.io - Unexplained Phenomena",
+            "source_type": "gnews_io",
+            "target": '"unexplained phenomena"',
             "purpose": "lead_generation",
         },
         # --- Test Agent (for debugging) ---
@@ -71,5 +82,36 @@ def seed_database():
     print("[SEEDER]: Seeding complete.")
 
 
+def seed_system_tasks():
+    """Populates the system_tasks table with its initial set of known tasks."""
+    print("[SEEDER]: Populating database with initial system tasks...")
+
+    tasks_to_add = [
+        {
+            "task_name": "CHECK_MODEL_STALENESS",
+            "status": "PENDING",
+            "notes": "Checks if the AI model needs to be retrained.",
+        },
+        {
+            "task_name": "RUN_DATA_BALANCER",
+            "status": "PENDING",
+            "notes": "Checks if the 'not_a_case' dataset is balanced against the case files.",
+        },
+        {
+            "task_name": "ARCHIVE_OLD_LEADS",
+            "status": "PENDING",
+            "notes": "Future task to archive or delete very old, unreviewed leads from the acquisition_log.",
+        },
+    ]
+
+    # We'll need a new function in db_manager to handle this
+    for task in tasks_to_add:
+        db_manager.add_system_task(task)
+
+    print("[SEEDER]: System tasks seeding complete.")
+
+
 if __name__ == "__main__":
+    # The seeder now runs both functions
     seed_database()
+    seed_system_tasks()

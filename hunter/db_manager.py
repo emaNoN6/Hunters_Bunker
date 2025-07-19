@@ -239,7 +239,13 @@ def add_case(lead_data):
 
 def get_random_cases_for_testing(limit=20):
     """Fetches a random sample of cases from the database for testing."""
-    sql = "SELECT * FROM cases WHERE full_html IS NOT NULL ORDER BY RANDOM() LIMIT %s;"
+    sql = """
+    SELECT id, public_uuid, title, url, source_name AS source, full_text, full_html 
+    FROM cases 
+    WHERE full_html IS NOT NULL 
+    ORDER BY RANDOM() 
+    LIMIT %s;
+    """
     conn = get_db_connection()
     if not conn:
         return []
@@ -252,6 +258,154 @@ def get_random_cases_for_testing(limit=20):
     except Exception as e:
         print(f"[DB_MANAGER ERROR]: Failed to get random cases: {e}")
         return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_source_by_name(source_name):
+    """Fetches a single source record by its unique name."""
+    sql = "SELECT * FROM sources WHERE source_name = %s;"
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (source_name,))
+            source = cursor.fetchone()
+            return dict(source) if source else None
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get source by name '{source_name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_sources_by_type(source_types):
+    """Fetches all sources that match a list of types."""
+    # The %s placeholder needs a tuple, even for one item.
+    sql = "SELECT * FROM sources WHERE source_type IN %s;"
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (tuple(source_types),))
+            sources = cursor.fetchall()
+            return [dict(row) for row in sources]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get sources by type: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_all_sources():
+    """A simple helper to get all sources from the database."""
+    sql = "SELECT * FROM sources;"
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql)
+            sources = cursor.fetchall()
+            return [dict(row) for row in sources]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get all sources: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_source_last_item(source_id, item_id):
+    """Updates the last_known_item_id for a specific source."""
+    sql = "UPDATE sources SET last_known_item_id = %s, last_checked_date = %s WHERE id = %s;"
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (item_id, datetime.now(), source_id))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to update source last item: {e}")
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def add_system_task(task_data):
+    """Adds or updates a task in the system_tasks table."""
+    sql = """
+    INSERT INTO system_tasks (task_name, status, notes)
+    VALUES (%s, %s, %s)
+    ON CONFLICT (task_name) DO NOTHING;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                sql,
+                (
+                    task_data["task_name"],
+                    task_data["status"],
+                    task_data.get("notes", ""),
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        print(
+            f"[DB_MANAGER ERROR]: Failed to add system task '{task_data['task_name']}': {e}"
+        )
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_all_tasks():
+    """Fetches all tasks from the system_tasks table."""
+    sql = "SELECT * FROM system_tasks ORDER BY task_name;"
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql)
+            tasks = cursor.fetchall()
+            return [dict(row) for row in tasks]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get all system tasks: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_task_status(task_name, status, notes=""):
+    """Updates the status and notes of a specific task."""
+    sql = """
+    UPDATE system_tasks 
+    SET status = %s, notes = %s, last_run_date = CURRENT_TIMESTAMP
+    WHERE task_name = %s;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (status, notes, task_name))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to update task '{task_name}': {e}")
+        conn.rollback()
     finally:
         if conn:
             conn.close()

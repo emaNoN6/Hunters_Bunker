@@ -1,83 +1,85 @@
 # hunter/custom_widgets.py
 
+# ==========================================================
+# Hunter's Command Console - Custom Widgets v2.0
+# This version includes a more robust tooltip implementation
+# that uses a placed frame instead of a Toplevel window to
+# avoid event-loop conflicts.
+# ==========================================================
+
 import customtkinter as ctk
 
-
-# ==========================================================
-# OffsetToolTip
-# A custom tooltip that can be offset from the cursor.
-# ==========================================================
 class OffsetToolTip:
     """
-    A completely custom tooltip implementation that gives us full control
-    over positioning and behavior.
+    A robust, custom tooltip that uses a placed frame to avoid the
+    event-loop bugs associated with creating/destroying Toplevel windows.
     """
 
     def __init__(
         self,
         widget,
-        message: str = "",
+        text,
         delay: float = 0.5,
         x_offset: int = 20,
         y_offset: int = 10,
         **kwargs,
     ):
         self.widget = widget
-
-        # --- THE FIX IS HERE ---
-        # This logic correctly handles the 'text' argument.
-        # It checks if 'text' was passed in the keyword arguments (**kwargs).
-        # If it was, it uses that value for the message and removes it
-        # from kwargs to prevent it from being passed twice.
-        # If not, it uses the 'message' parameter as a fallback.
-        self.message = kwargs.pop("text", message)
-
+        self.text = text
         self.delay = delay
         self.x_offset = x_offset
         self.y_offset = y_offset
-        self.kwargs = kwargs  # kwargs now no longer contains 'text'
+        self.kwargs = kwargs
 
-        self.tooltip_window = None
+        self._tooltip_frame = None
         self._display_after_id = None
 
-        self.widget.bind("<Enter>", self._on_enter, add="+")
-        self.widget.bind("<Leave>", self._on_leave, add="+")
-        self.widget.bind("<Button-1>", self._on_leave, add="+")  # Also hide on click
+        self.widget.bind("<Enter>", self._schedule_display)
+        self.widget.bind("<Leave>", self._hide_tooltip)
+        self.widget.bind("<Button-1>", self._hide_tooltip) # Hide on click
 
-    def _on_enter(self, event=None):
-        """Schedules the tooltip to be displayed."""
-        self._cancel_scheduled_display()
+    def _schedule_display(self, event=None):
+        """Schedules the tooltip to be displayed after a delay."""
+        self._cancel_scheduled_display() # Cancel any pending tooltips
         self._display_after_id = self.widget.after(
             int(self.delay * 1000), self._display_tooltip
         )
 
-    def _on_leave(self, event=None):
-        """Hides the tooltip window correctly."""
+    def _hide_tooltip(self, event=None):
+        """Hides the tooltip frame."""
         self._cancel_scheduled_display()
-        if self.tooltip_window is not None:
-            self.tooltip_window.destroy()
-            self.tooltip_window = None
+        if self._tooltip_frame:
+            self._tooltip_frame.place_forget() # Hide the frame
+            self._tooltip_frame.destroy()      # Clean up the widgets
+            self._tooltip_frame = None
 
     def _cancel_scheduled_display(self):
         """Helper to cancel a pending tooltip display."""
-        if self._display_after_id is not None:
+        if self._display_after_id:
             self.widget.after_cancel(self._display_after_id)
             self._display_after_id = None
 
     def _display_tooltip(self):
-        """Creates and displays the tooltip window at the correct position."""
-        if self.tooltip_window is not None:
+        """Creates and displays the tooltip frame at the correct position."""
+        if self._tooltip_frame:
             return
 
+        # --- THE NEW LOGIC ---
+        # We create a CTkFrame on the top-level window, which is safer.
+        toplevel_window = self.widget.winfo_toplevel()
+        self._tooltip_frame = ctk.CTkFrame(toplevel_window, border_width=1, border_color="gray50")
+
+        # Calculate position relative to the root window
         x = self.widget.winfo_rootx() + self.x_offset
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + self.y_offset
 
-        self.tooltip_window = tw = ctk.CTkToplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{int(x)}+{int(y)}")
-
-        # This call is now safe because we've removed the duplicate 'text' key
         label = ctk.CTkLabel(
-            master=tw, text=self.message, justify="left", **self.kwargs
+            self._tooltip_frame,
+            text=self.text,
+            justify="left",
+            **self.kwargs
         )
-        label.pack(padx=(10, 10), pady=(4, 4))
+        label.pack(padx=8, pady=4)
+
+        # Use .place() to position the frame on top of everything else
+        self._tooltip_frame.place(x=x, y=y)
