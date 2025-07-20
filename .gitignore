@@ -33,3 +33,4 @@ config.ini
 cache/
 texts/
 data
+tools/db_backup.log
