@@ -33,4 +33,6 @@ config.ini
 cache/
 texts/
 data
+
+# Ignore db_backup log file
 tools/db_backup.log
