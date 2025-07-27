@@ -1,3 +1,19 @@
+#  ==========================================================
+#  Hunter's Command Console
+#  #
+#  File: dataset_guardian_agent.py
+#  Last Modified: 7/27/25, 2:57 PM
+#  Copyright (c) 2025, M. Stilson & Codex
+#  #
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the MIT License.
+#  #
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  LICENSE file for more details.
+#  ==========================================================
+
 # This is our refactored guardian. It's now a class-based "agent"
 # that can be controlled by our main GUI. It communicates its status
 # back to the GUI via a queue instead of printing to the console.

@@ -1,9 +1,24 @@
-# html_parsers/link_extractor.py
+#  ==========================================================
+#  Hunter's Command Console
+#  #
+#  File: link_extractor.py
+#  Last Modified: 7/27/25, 2:57 PM
+#  Copyright (c) 2025, M. Stilson & Codex
+#  #
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the MIT License.
+#  #
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  LICENSE file for more details.
+#  ==========================================================
+
+# hunter/html_parsers/link_extractor.py
 
 from bs4 import BeautifulSoup
 import re
 
-# A list of keywords to identify and discard junk links.
 JUNK_LINK_PATTERNS = [
     "privacy",
     "terms",
@@ -18,32 +33,15 @@ JUNK_LINK_PATTERNS = [
 
 
 def find_links(html_content):
-    """
-    Parses HTML content, finds all hyperlinks, filters out junk,
-    and returns a clean list of (url, text) tuples.
-    """
     if not html_content:
         return []
-
     soup = BeautifulSoup(html_content, "html.parser")
     links = []
-
     for a_tag in soup.find_all("a", href=True):
         url = a_tag["href"]
         text = a_tag.get_text(strip=True)
-
-        # Skip if it's just an internal page anchor
         if url.startswith("#"):
             continue
-
-        # Junk filter
-        is_junk = False
-        for pattern in JUNK_LINK_PATTERNS:
-            if re.search(pattern, url, re.IGNORECASE):
-                is_junk = True
-                break
-
-        if not is_junk:
+        if not any(re.search(p, url, re.IGNORECASE) for p in JUNK_LINK_PATTERNS):
             links.append({"url": url, "text": text or url})
-
     return links

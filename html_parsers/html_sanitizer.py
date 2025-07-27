@@ -1,26 +1,41 @@
+#  ==========================================================
+#  Hunter's Command Console
+#  #
+#  File: html_sanitizer.py
+#  Last Modified: 7/27/25, 2:57 PM
+#  Copyright (c) 2025, M. Stilson & Codex
+#  #
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the MIT License.
+#  #
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  LICENSE file for more details.
+#  ==========================================================
+
 # hunter/html_parsers/html_sanitizer.py
 
 from bs4 import BeautifulSoup
-from hunter import config_manager  # Use relative import
+from hunter import config_manager  # Use relative import to get the config
 
 # --- GUI Configuration ---
 GUI_CONFIG = config_manager.get_gui_config()
 FONT_FAMILY = GUI_CONFIG.get("font_family", "Courier New")
-FONT_SIZE = int(GUI_CONFIG.get("font_size", 14))
+HTML_FONT_SIZE = int(GUI_CONFIG.get("html_font_size_pt", 24))
 DARK_GRAY = GUI_CONFIG.get("dark_gray", "#2b2b2b")
 TEXT_COLOR = GUI_CONFIG.get("text_color", "#E0E0E0")
 ACCENT_COLOR = GUI_CONFIG.get("accent_color", "#A9D1F5")
 LINK_VISITED_COLOR = GUI_CONFIG.get("link_visited_color", "#B2A2D4")
 
-# This is our "Bunker Standard" stylesheet. It's now more powerful
-# because tkinterweb can understand it correctly.
+# This is our "Bunker Standard" stylesheet.
 BUNKER_STYLESHEET = f"""
 <style>
     body {{
         background-color: {DARK_GRAY};
         color: {TEXT_COLOR};
         font-family: "{FONT_FAMILY}", monospace;
-        font-size: 40pt;
+        font-size: {HTML_FONT_SIZE}pt;
         line-height: 1.6;
         margin: 15px;
     }}
@@ -52,16 +67,9 @@ BUNKER_STYLESHEET = f"""
 
 
 def sanitize_and_style(html_content, lead_title=""):
-    """
-    Takes raw HTML, strips it of all conflicting styles and scripts,
-    and injects our standard stylesheet into the <head>.
-    """
     if not html_content:
         return ""
-
     soup = BeautifulSoup(html_content, "html.parser")
-
-    # Exorcism Ritual
     for element in soup(["script", "style"]):
         element.decompose()
     for tag in soup.find_all(True):
@@ -72,16 +80,10 @@ def sanitize_and_style(html_content, lead_title=""):
             if h_tag.get_text(strip=True).lower() == lead_title.lower():
                 h_tag.decompose()
                 break
-
     body_content = soup.find("body")
-    if body_content:
-        body_inner_html = body_content.decode_contents()
-    else:
-        body_inner_html = soup.decode_contents()
-
-    # Re-forge the document with a proper head and our stylesheet
-    styled_html = f"""
-    <html><head>{BUNKER_STYLESHEET}</head><body>{body_inner_html}</body></html>
-    """
-
-    return styled_html
+    body_inner_html = (
+        body_content.decode_contents() if body_content else soup.decode_contents()
+    )
+    return (
+        f"<html><head>{BUNKER_STYLESHEET}</head><body>{body_inner_html}</body></html>"
+    )

@@ -1,7 +1,18 @@
-# ==========================================================
-# Hunter's Command Console - Main Application
-# v6.0 - Full theming support from config.ini
-# ==========================================================
+#  ==========================================================
+#  Hunter's Command Console
+#  #
+#  File: hunter_app.py
+#  Last Modified: 7/27/25, 2:57 PM
+#  Copyright (c) 2025, M. Stilson & Codex
+#  #
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the MIT License.
+#  #
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  LICENSE file for more details.
+#  ==========================================================
 
 import customtkinter as ctk
 import threading
@@ -16,10 +27,11 @@ from PIL import Image
 import tkinterweb
 
 # --- Our Custom Tools ---
+# These imports are now correct for our package structure.
 from . import config_manager
 from . import actions_news_search
 from . import db_manager
-from .custom_widgets import CTkToolTip
+from .custom_widgets.tooltip import CTkToolTip
 from html_parsers import html_sanitizer, link_extractor
 
 # --- GUI Configuration ---
@@ -45,16 +57,22 @@ class HunterApp(ctk.CTk):
         # --- Window Setup ---
         self.title("Hunter's Command Console")
         self.geometry("800x600")
-        self.configure(fg_color=DARK_BG)  # Set main window background
+        self.configure(fg_color=DARK_BG)
 
         # --- Font Definitions ---
         self.main_font = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE)
         self.bold_font = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE, weight="bold")
+        self.button_font = ctk.CTkFont(
+            family=FONT_FAMILY, size=FONT_SIZE + 2, weight="bold"
+        )
 
         # --- Database Connection Check ---
         if not db_manager.check_database_connection():
             error_label = ctk.CTkLabel(
-                self, text="FATAL ERROR...", font=self.bold_font, text_color="red"
+                self,
+                text="FATAL ERROR: Could not connect to PostgreSQL database.",
+                font=self.bold_font,
+                text_color="red",
             )
             error_label.pack(expand=True)
             return
@@ -88,31 +106,28 @@ class HunterApp(ctk.CTk):
             text_color=TEXT_COLOR,
         )
         title_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
-
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self.left_frame, fg_color=DARK_GRAY
         )
         self.scrollable_frame.grid(
             row=1, column=0, sticky="nsew", padx=10, pady=(0, 10)
         )
-
         self.bottom_frame = ctk.CTkFrame(self.left_frame, fg_color="transparent")
         self.bottom_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         self.bottom_frame.grid_columnconfigure(0, weight=1)
         self.bottom_frame.grid_columnconfigure(1, weight=1)
-
         self.search_button = ctk.CTkButton(
             self.bottom_frame,
             text="Search for New Cases",
             command=self.start_search_thread,
-            font=self.main_font,
+            font=self.button_font,
         )
         self.search_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.confirm_button = ctk.CTkButton(
             self.bottom_frame,
             text="Confirm & File Selected",
             command=self.confirm_triage_action,
-            font=self.main_font,
+            font=self.button_font,
         )
         self.confirm_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
@@ -121,10 +136,8 @@ class HunterApp(ctk.CTk):
         self.tab_view.pack(expand=True, fill="both", padx=10, pady=10)
         self.tab_view.add("Dossier")
         self.tab_view.add("Operations Log")
-
         self.detail_frame = self.tab_view.tab("Dossier")
         self.log_frame = self.tab_view.tab("Operations Log")
-
         self.log_textbox = ctk.CTkTextbox(
             self.log_frame,
             font=self.main_font,
@@ -133,7 +146,6 @@ class HunterApp(ctk.CTk):
             text_color=TEXT_COLOR,
         )
         self.log_textbox.pack(expand=True, fill="both")
-
         self.log_textbox.tag_config("INFO", foreground=ACCENT_COLOR)
         self.log_textbox.tag_config("SUCCESS", foreground=SUCCESS_COLOR)
         self.log_textbox.tag_config("ERROR", foreground=ERROR_COLOR)
@@ -175,8 +187,9 @@ class HunterApp(ctk.CTk):
                 self.scrollable_frame, fg_color=DARK_GRAY, cursor="hand2"
             )
             header.pack(fill="x", pady=(5, 1), padx=2)
-            plural = "s" if len(leads) > 1 else ""
-            label_text = f"▶ {source} ({len(leads)} new lead{plural})"
+            lead_count = len(leads)
+            plural_s = "s" if lead_count != 1 else ""
+            label_text = f"▶ {source} ({lead_count} new lead{plural_s})"
             header_label = ctk.CTkLabel(
                 header,
                 text=label_text,
@@ -216,15 +229,12 @@ class HunterApp(ctk.CTk):
     def _create_lead_widgets(self, parent_frame, leads):
         tooltip_x = int(GUI_CONFIG.get("tooltip_x_offset", 20))
         tooltip_y = int(GUI_CONFIG.get("tooltip_y_offset", 10))
-
         case_border = GUI_CONFIG.get("case_border_color", "#006600")
         case_fg = GUI_CONFIG.get("case_fg_color", "#008800")
         case_hover = GUI_CONFIG.get("case_hover_color", "#00AA00")
-
         not_case_border = GUI_CONFIG.get("not_case_border_color", "#660000")
         not_case_fg = GUI_CONFIG.get("not_case_fg_color", "#880000")
         not_case_hover = GUI_CONFIG.get("not_case_hover_color", "#AA0000")
-
         corner_radius = int(GUI_CONFIG.get("corner_radius", 4))
 
         for lead_data in leads:
@@ -233,15 +243,15 @@ class HunterApp(ctk.CTk):
             decision_var = ctk.StringVar(value="none")
             ctk.CTkRadioButton(
                 item_frame,
-                text="", 
-                variable=decision_var, 
+                text="",
+                variable=decision_var,
                 corner_radius=corner_radius,
-                width=16, 
+                width=16,
                 height=16,
-                border_color=case_border, 
+                border_color=case_border,
                 fg_color=case_fg,
                 hover_color=case_hover,
-                value="case"
+                value="case",
             ).pack(side="left", padx=1)
             ctk.CTkRadioButton(
                 item_frame,
@@ -272,9 +282,8 @@ class HunterApp(ctk.CTk):
                 message=lead_data["title"],
                 delay=0.25,
                 follow=True,
-                wraplength=200,
                 x_offset=tooltip_x,
-                y_offset=-tooltip_y,
+                y_offset=tooltip_y,
             )
             self.triage_items.append(
                 {"frame": item_frame, "data": lead_data, "decision_var": decision_var}
@@ -311,24 +320,17 @@ class HunterApp(ctk.CTk):
             self.log_message(f"[SAVE ERROR]: Could not save retraining file: {e}")
 
     def display_lead_detail(self, lead_data):
-        """
-        Rebuilt to use the powerful tkinterweb.HtmlFrame and our new parsers.
-        """
         for widget in self.detail_frame.winfo_children():
             widget.destroy()
-
         self.detail_frame.grid_rowconfigure(0, weight=3)
         self.detail_frame.grid_rowconfigure(1, weight=1)
         self.detail_frame.grid_columnconfigure(0, weight=1)
-
-        top_pane = ctk.CTkFrame(self.detail_frame, fg_color=GUI_CONFIG.get("dark_gray"))
+        top_pane = ctk.CTkFrame(self.detail_frame, fg_color=DARK_GRAY)
         top_pane.grid(row=0, column=0, sticky="nsew")
-
         raw_html = lead_data.get("full_html", "")
         styled_html = html_sanitizer.sanitize_and_style(
             raw_html, lead_data.get("title")
         )
-
         if styled_html:
             html_viewer = tkinterweb.HtmlFrame(
                 top_pane,
@@ -337,36 +339,58 @@ class HunterApp(ctk.CTk):
             )
             html_viewer.load_html(styled_html)
             html_viewer.pack(fill="both", expand=True)
-
-            # --- THE DEFINITIVE FIX IS HERE ---
-            # We cast a ward on the html_viewer itself. This spell tells it to
-            # "consume" all mouse wheel events and stop them from propagating
-            # up to the parent scrollable frame, which prevents the conflict.
-            html_viewer.bind_all("<MouseWheel>", self._consume_scroll_event)
-            html_viewer.bind_all(
-                "<Button-4>", self._consume_scroll_event
-            )  # For Linux scrolling up
-            html_viewer.bind_all(
-                "<Button-5>", self._consume_scroll_event
-            )  # For Linux scrolling down
-
+            html_viewer.html.bind_all("<MouseWheel>", self._consume_scroll_event)
+            html_viewer.html.bind_all("<Button-4>", self._consume_scroll_event)
+            html_viewer.html.bind_all("<Button-5>", self._consume_scroll_event)
         else:
-            # ... (fallback for plain text)
-            pass
-
-        # --- Bottom Pane: The Extracted Links List ---
-        bottom_pane = ctk.CTkFrame(
-            self.detail_frame, fg_color=GUI_CONFIG.get("dark_gray")
-        )
+            text_box = ctk.CTkTextbox(
+                top_pane,
+                font=self.main_font,
+                wrap="word",
+                text_color=TEXT_COLOR,
+                fg_color=DARK_GRAY,
+            )
+            text_box.pack(expand=True, fill="both")
+            text_box.insert("0.0", lead_data.get("full_text", "No content available."))
+            text_box.configure(state="disabled")
+        bottom_pane = ctk.CTkFrame(self.detail_frame, fg_color=DARK_GRAY)
         bottom_pane.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
-        # ... (The rest of this section is unchanged)
+        bottom_pane.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            bottom_pane,
+            text="Extracted Links",
+            font=self.bold_font,
+            text_color=TEXT_COLOR,
+        ).pack(anchor="w", padx=10, pady=5)
+        links_frame = ctk.CTkScrollableFrame(bottom_pane, fg_color="transparent")
+        links_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        extracted_links = link_extractor.find_links(raw_html)
+        if not extracted_links:
+            ctk.CTkLabel(
+                links_frame,
+                text="No links found.",
+                font=self.main_font,
+                text_color="gray",
+            ).pack()
+        else:
+            for link in extracted_links:
+                link_text = f"🔗 {link['text']}"
+                link_label = ctk.CTkLabel(
+                    links_frame,
+                    text=link_text,
+                    anchor="w",
+                    cursor="hand2",
+                    font=self.main_font,
+                    text_color=ACCENT_COLOR,
+                )
+                link_label.pack(fill="x", padx=5, pady=2)
+                link_label.bind(
+                    "<Button-1>",
+                    lambda e, url=link["url"]: self.open_link_in_browser(url),
+                )
+                CTkToolTip(links_frame, message=link["url"])
 
     def _consume_scroll_event(self, event):
-        """
-        A simple event handler that acts as a firewall, consuming the
-        scroll event to prevent it from causing errors in parent widgets.
-        """
-        # The 'break' tells the Tkinter event loop to stop processing this event.
         return "break"
 
     def open_link_in_browser(self, url):
@@ -426,3 +450,6 @@ class HunterApp(ctk.CTk):
                 self.log_message(f"  -> PENDING: {task_name}")
         else:
             self.log_message("[APP SUCCESS]: All system tasks are complete.")
+
+
+# The main execution block should be in hunter/__main__.py
