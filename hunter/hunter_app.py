@@ -20,10 +20,8 @@ import queue
 import webbrowser
 import os
 import re
-import time
 import textwrap
 from datetime import datetime
-from PIL import Image
 import tkinterweb
 
 # --- Our Custom Tools ---
@@ -32,7 +30,7 @@ from . import config_manager
 from . import actions_news_search
 from . import db_manager
 from .custom_widgets.tooltip import CTkToolTip
-from html_parsers import html_sanitizer, link_extractor
+from hunter.html_parsers import html_sanitizer, link_extractor
 
 # --- GUI Configuration ---
 # All theme settings are now loaded from the config file.
