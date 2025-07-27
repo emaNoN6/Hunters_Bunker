@@ -24,7 +24,7 @@ import os
 import re
 import random
 import time
-import config_manager
+from hunter import config_manager
 from gutenbergpy import textget
 from gutenbergpy.gutenbergcache import GutenbergCache
 
@@ -40,7 +40,7 @@ CASE_DIRECTORIES = [
 ]
 NOT_CASE_DIR = os.path.join(BASE_DIR, "training_data", "not_a_case")
 BALANCE_THRESHOLD = float(
-    config_manager.get_config_value("General", "balance_threshold")
+    config_manager.get_general_config().get("balance_threshold", "0.97")
 )
 
 # --- Helper Functions ---
@@ -292,7 +292,7 @@ def run_balancer():
             not_case_words, _ = count_words_and_files([NOT_CASE_DIR])
             current_balance = not_case_words / case_words if case_words > 0 else 1.0
             print(f"  -> New Balance: {current_balance:.2%}")
-            failed_attempts
+            failed_attempts = 0
         else:
             print(
                 "[BALANCER WARNING]: Failed to acquire a suitable book. Aborting for now."

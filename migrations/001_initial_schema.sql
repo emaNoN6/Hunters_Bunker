@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS "cases" (
     "status"	TEXT DEFAULT 'New',
     "triage_date"	TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     "category"	TEXT,
-    'severity_score'    REAL
+    "severity_score"    REAL
 );
 
 -- Dynamically manages all our intelligence gathering agents.
