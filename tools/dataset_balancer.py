@@ -1,7 +1,7 @@
 #  ==========================================================
 #  Hunter's Command Console
 #  #
-#  File: dataset_balancer_gutenberg.py
+#  File: dataset_balancer.py
 #  Last Modified: 7/27/25, 2:57 PM
 #  Copyright (c) 2025, M. Stilson & Codex
 #  #

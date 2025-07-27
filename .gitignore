@@ -1,38 +1,17 @@
-# Ignore the Python virtual environment
-.venv/
-
-# Ignore compiled Python files
+# Python Caches & Virtual Environment
 __pycache__/
 *.pyc
+.venv/
 
-# Ignore all our data and lore folders
-lore_transcripts/
-Unexplained_Transcripts/
-fortean_times_pdfs/
-bestiary_data/
-training_data/
+# IDE Configuration
+.vscode/
+.idea/
 
-# Ignore the trained model files
-*.joblib
-*.meta.json
-*.onnx
-
-# Ignore the SQLite database
-*.db
-
-# Ignore our db backups
-db_backups/
-
-# Ignore our secret config file
-config.ini
-
-#ignore my temporary files
-*.tmp
-
-# Ignore Gutenberg cache
+# Generated Artifacts & Data
 cache/
-texts/
-data
-
-# Ignore db_backup log file
-tools/db_backup.log
+db_backups/
+data/
+hunter_model.joblib
+*.log
+*.db
+/config.ini
