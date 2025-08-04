@@ -71,7 +71,8 @@ def sanitize_and_style(html_content, lead_title=""):
         if tag.has_attr('style'): del tag['style']
     if lead_title:
         for h_tag in soup.find_all(['h1', 'h2']):
-            if h_tag.get_text(strip=True).lower() == lead_title.lower():
+#            if h_tag.get_text(strip=True).lower().__contains__(lead_title.lower()):
+            if lead_title.lower().__contains__(h_tag.get_text(strip=True).lower()):
                 h_tag.decompose()
                 break
     body_content = soup.find('body')

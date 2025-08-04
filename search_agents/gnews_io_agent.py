@@ -1,81 +1,56 @@
-#  ==========================================================
-#  Hunter's Command Console
-#  #
-#  File: gnews_io_agent.py
-#  Last Modified: 7/27/25, 2:57 PM
-#  Copyright (c) 2025, M. Stilson & Codex
-#  #
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the MIT License.
-#  #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#  LICENSE file for more details.
-#  ==========================================================
-
 # search_agents/gnews_io_agent.py
 
 import requests
-from hunter import db_manager
-from hunter import config_manager
-import time
+from hunter import http_utils  # Use relative import
 
-# The base URL for the gnews.io API
 API_ENDPOINT = "https://gnews.io/api/v4/search"
 
 
-def hunt(log_queue, source):
-    """
+def hunt(log_queue, source, gnews_creds):
+	"""
     Searches for news articles using the gnews.io API.
+    Credentials are now passed in directly by the dispatcher.
     """
-    keyword = source.get("target")
-    source_id = source.get("id")
-    source_name = source.get("source_name")
+	keyword = source.get('target')
+	source_name = source.get('source_name')
 
-    log_queue.put(f"[{source_name}]: Waking up. Querying gnews.io for '{keyword}'...")
+	log_queue.put(f"[{source_name}]: Waking up. Querying gnews.io for '{keyword}'...")
 
-    creds = config_manager.get_gnews_io_credentials()
-    if not creds or not creds.get("api_key"):
-        log_queue.put(
-            f"[{source_name} ERROR]: GNews.io API key not found in config.ini"
-        )
-        return []
+	if not gnews_creds or not gnews_creds.get('api_key'):
+		log_queue.put(f"[{source_name} ERROR]: GNews.io API key was not provided by dispatcher.")
+		return []
 
-    params = {
-        "q": keyword,
-        "lang": "en",
-        "country": "us",
-        "max": 10,
-        "apikey": creds["api_key"],
-    }
+	params = {
+		'q':       keyword,
+		'lang':    'en',
+		'country': 'us',
+		'max':     10,
+		'apikey':  gnews_creds['api_key']
+	}
 
-    results = []
-    try:
-        response = requests.get(API_ENDPOINT, params=params)
-        response.raise_for_status()
-        data = response.json()
-        articles = data.get("articles", [])
+	results = []
+	try:
+		headers = http_utils.get_stealth_headers(API_ENDPOINT)
+		response = requests.get(API_ENDPOINT, params=params, headers=headers)
+		response.raise_for_status()
+		data = response.json()
+		articles = data.get('articles', [])
 
-        log_queue.put(f"[{source_name}]: Found {len(articles)} potential leads.")
+		log_queue.put(f"[{source_name}]: Found {len(articles)} potential leads.")
 
-        for item in articles:
-            # Check if we've already processed this article
-            if db_manager.check_acquisition_log(item["url"]):
-                continue
+		for item in articles:
+			lead_data = {
+				"title":            item['title'],
+				"url":              item['url'],
+				"source":           source_name,
+				"publication_date": item['publishedAt'],
+				"text":             item.get('description', ''),
+				"html":             f"<h1>{item['title']}</h1><p>{item.get('description', '')}</p><p><b>Source:</b> {item['source']['name']}</p><p><a href='{item['url']}' target='_blank'>Read More</a></p>"
+			}
+			results.append(lead_data)
 
-            lead_data = {
-                "title": item["title"],
-                "url": item["url"],
-                "source": source_name,
-                "text": item.get("description", ""),
-                "html": f"<h1>{item['title']}</h1><p>{item.get('description', '')}</p><p><b>Source:</b> {item['source']['name']}</p><p><a href='{item['url']}' target='_blank'>Read More</a></p>",
-            }
-            results.append(lead_data)
+		return results
 
-        return results
-
-    except Exception as e:
-        log_queue.put(f"[{source_name} ERROR]: {e}")
-        # Here we would update the source's failure count in a real scenario
-        return []
+	except Exception as e:
+		log_queue.put(f"[{source_name} ERROR]: {e}")
+		return []

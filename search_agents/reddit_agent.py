@@ -1,74 +1,49 @@
-#  ==========================================================
-#  Hunter's Command Console
-#  #
-#  File: reddit_agent.py
-#  Last Modified: 7/27/25, 2:57 PM
-#  Copyright (c) 2025, M. Stilson & Codex
-#  #
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the MIT License.
-#  #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#  LICENSE file for more details.
-#  ==========================================================
-
 # search_agents/reddit_agent.py
 
 import praw
-from hunter import db_manager
-from hunter import config_manager
+from hunter import db_manager  # Use relative import
 
 
-def hunt(log_queue, source):
-    """
+def hunt(log_queue, source, reddit_creds):
+	"""
     Searches for new posts in a given subreddit.
+    Credentials are now passed in directly by the dispatcher.
     """
-    subreddit_name = source.get("target")
-    source_id = source.get("id")
-    source_name = source.get("source_name")
+	subreddit_name = source.get('target')
+	source_id = source.get('id')
+	source_name = source.get('source_name')
 
-    log_queue.put(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
+	log_queue.put(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
 
-    reddit_creds = config_manager.get_reddit_credentials()
-    if not reddit_creds:
-        log_queue.put(
-            f"[{source_name} ERROR]: Reddit API credentials not found in config.ini"
-        )
-        return []
+	if not reddit_creds:
+		log_queue.put(f"[{source_name} ERROR]: Reddit API credentials were not provided by the dispatcher.")
+		return []
 
-    results = []
-    try:
-        reddit = praw.Reddit(
-            client_id=reddit_creds["client_id"],
-            client_secret=reddit_creds["client_secret"],
-            user_agent=reddit_creds["user_agent"],
-        )
+	results = []
+	try:
+		reddit = praw.Reddit(
+				client_id=reddit_creds['client_id'],
+				client_secret=reddit_creds['client_secret'],
+				user_agent=reddit_creds['user_agent']
+		)
 
-        subreddit = reddit.subreddit(subreddit_name)
+		subreddit = reddit.subreddit(subreddit_name)
 
-        # We only look at the 25 newest posts to keep the search fast.
-        for submission in subreddit.new(limit=25):
-            # Check if we've already processed this post
-            if db_manager.check_acquisition_log(submission.url):
-                continue
+		for submission in subreddit.new(limit=25):
+			# The dispatcher now handles checking the acquisition log,
+			# so the agent's only job is to gather the intel.
+			lead_data = {
+				"title":  submission.title,
+				"url":    submission.url,
+				"source": source_name,  # Use the clean name from the DB
+				"text":   submission.selftext,
+				"html":   submission.selftext_html if submission.selftext_html else f"<p>{submission.selftext}</p>"
+			}
+			results.append(lead_data)
 
-            lead_data = {
-                "title": submission.title,
-                "url": submission.url,
-                "source": f"r/{subreddit_name}",
-                "text": submission.selftext,
-                "html": f"<h1>{submission.title}</h1><p>{submission.selftext_html}</p>",
-            }
-            results.append(lead_data)
-            db_manager.log_acquisition(
-                submission.url, source_id, submission.title, "PROCESSED"
-            )
+		log_queue.put(f"[{source_name}]: Found {len(results)} potential leads.")
+		return results
 
-        log_queue.put(f"[{source_name}]: Found {len(results)} new leads.")
-        return results
-
-    except Exception as e:
-        log_queue.put(f"[{source_name} ERROR]: {e}")
-        return []
+	except Exception as e:
+		log_queue.put(f"[{source_name} ERROR]: {e}")
+		return []

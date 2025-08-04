@@ -16,16 +16,35 @@
 
 # hunter/__main__.py
 
-# This file makes the 'hunter' package directly runnable.
-# When you run `python -m hunter`, this is the code that executes.
+# First, import our tools
+from . import hunter_app
+from . import db_manager
 
-from .hunter_app import HunterApp
 
 def main():
     """The main entry point for the application."""
-    print("Launching Hunter's Command Console...")
-    app = HunterApp()
+
+    # --- THIS IS THE NEW, CORRECT LOCATION FOR THE PRE-FLIGHT CHECK ---
+    print("--- Hunter's Command Console: Pre-Flight Check ---")
+
+    # We need a simple function to check the DB version without the full GUI.
+    # We'll add this to the db_manager.
+    is_db_ok, message = db_manager.verify_db_version()
+
+    if not is_db_ok:
+        # If the check fails, we print the error to the console and exit.
+        # The GUI is never even created.
+        print(f"\n[FATAL STARTUP ERROR]: {message}")
+        print("\n--- Pre-Flight Check FAILED. Aborting launch. ---")
+        return  # Exit the program
+
+    print(f"[SUCCESS]: {message}")
+    print("\n--- Pre-Flight Check Complete. Launching Main Console... ---")
+
+    # Only if the check passes do we launch the app.
+    app = hunter_app.HunterApp()
     app.mainloop()
+
 
 if __name__ == "__main__":
     main()

@@ -28,3 +28,16 @@
 2025-07-23 03:06:59 - INFO -  -> Pruning old backups...
 2025-07-23 03:06:59 - INFO -  -> No old backups to prune.
 2025-07-23 03:06:59 - INFO - [BACKUP AGENT]: Operation complete.
+2025-08-02 12:23:49 - INFO - [BACKUP AGENT]: Beginning database backup operation...
+2025-08-02 12:23:49 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-02_12-23-49.sql
+2025-08-02 12:23:49 - CRITICAL - [BACKUP FATAL ERROR]: docker exec or pg_dump failed.
+2025-08-02 12:23:49 - CRITICAL -  -> STDERR: pg_dump: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  database "hunters_almanac" does not exist
+
+2025-08-03 03:24:42 - INFO - [BACKUP AGENT]: Beginning database backup operation...
+2025-08-03 03:24:42 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-03_03-24-42.sql
+2025-08-03 11:18:55 - INFO - [BACKUP AGENT]: Beginning database backup operation...
+2025-08-03 11:18:55 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-03_11-18-55.sql
+2025-08-03 11:18:56 - INFO - [BACKUP SUCCESS]: Database backup created successfully.
+2025-08-03 11:18:56 - INFO -  -> Pruning old backups...
+2025-08-03 11:18:56 - INFO -  -> No old backups to prune.
+2025-08-03 11:18:56 - INFO - [BACKUP AGENT]: Operation complete.

@@ -408,7 +408,7 @@ class HunterApp(ctk.CTk):
                 self.log_textbox.configure(state="normal")
                 timestamp = f"{datetime.now().strftime('%H:%M:%S')} - "
                 self.log_textbox.insert("end", timestamp, "TIMESTAMP")
-                tag_match = re.search(r"^(\[.*?\])", msg)
+                tag_match = re.search(r"^(\[.*?])", msg)
                 if tag_match:
                     tag = tag_match.group(1)
                     if "ERROR" in tag or "FATAL" in tag:
