@@ -1,18 +1,14 @@
-#  ==========================================================
-#  Hunter's Command Console
-#  #
-#  File: html_sanitizer.py
-#  Last Modified: 7/27/25, 2:57 PM
-#  Copyright (c) 2025, M. Stilson & Codex
-#  #
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the MIT License.
-#  #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#  LICENSE file for more details.
-#  ==========================================================
+# ==========================================================
+# Hunter's Command Console
+#
+# File:    html_sanitizer.py
+# Version: 1.0.0
+#
+# Copyright (c) 2025, M. Stilson & Codex
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the MIT License. See the LICENSE file for details.
+# ==========================================================
 
 from bs4 import BeautifulSoup
 from .. import config_manager # Use relative import to get the config
@@ -70,9 +66,10 @@ def sanitize_and_style(html_content, lead_title=""):
     for tag in soup.find_all(True):
         if tag.has_attr('style'): del tag['style']
     if lead_title:
+        lead_title_lower = lead_title.lower()
         for h_tag in soup.find_all(['h1', 'h2']):
-#            if h_tag.get_text(strip=True).lower().__contains__(lead_title.lower()):
-            if lead_title.lower().__contains__(h_tag.get_text(strip=True).lower()):
+            h_text_lower = h_tag.get_text(strip=True).lower()
+            if h_text_lower and lead_title_lower.__contains__(h_text_lower):
                 h_tag.decompose()
                 break
     body_content = soup.find('body')

@@ -326,3 +326,21 @@ def update_source_check_time(source_id):
 		conn.rollback()
 	finally:
 		if conn: conn.close()
+
+
+def get_all_sources():
+	"""Fetches all sources from the sources table."""
+	sql = "SELECT * FROM sources ORDER BY source_name;"
+	conn = get_db_connection()
+	if not conn: return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql)
+			sources = cursor.fetchall()
+			return [dict(row) for row in sources]
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to get all sources: {e}")
+		return []
+	finally:
+		if conn: conn.close()
+		return []
