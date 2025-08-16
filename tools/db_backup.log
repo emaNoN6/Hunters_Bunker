@@ -64,3 +64,15 @@
 2025-08-09 14:40:04 - INFO - [BACKUP AGENT]: Operation complete.
 2025-08-14 03:33:00 - INFO - [BACKUP AGENT]: Beginning database backup operation...
 2025-08-14 03:33:00 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-14_03-33-00.sql
+2025-08-16 09:48:07 - INFO - [BACKUP AGENT]: Beginning database backup operation...
+2025-08-16 09:48:07 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-16_09-48-07.sql
+2025-08-16 09:48:08 - CRITICAL - [BACKUP FATAL ERROR]: docker exec or pg_dump failed.
+2025-08-16 09:48:08 - CRITICAL -  -> STDERR: pg_dump: error: query failed: ERROR:  permission denied for table acquisition_log_template
+pg_dump: detail: Query was: LOCK TABLE public.source_domains, public.sources, public.acquisition_router, public.acquisition_log, public.cases, public.case_content, public.investigations, public.investigation_nodes, public.investigation_links, public.schema_version, public.acquisition_log_template, public.cases_template, public.case_content_template, partman.template_public_acquisition_log, public.acquisition_log_p20250801, public.acquisition_log_p20250901, public.acquisition_log_p20251001, public.acquisition_log_default, partman.template_public_cases, public.cases_p20250801, public.cases_p20250901, public.cases_p20251001, public.cases_default, partman.template_public_case_content, public.case_content_p20250801, public.case_content_p20250901, public.case_content_p20251001, public.case_content_default, public.system_tasks, public.processed_files_log, public.processed_file_outputs, public.model_metadata, public.media_evidence IN ACCESS SHARE MODE
+
+2025-08-16 09:49:24 - INFO - [BACKUP AGENT]: Beginning database backup operation...
+2025-08-16 09:51:01 - INFO -  -> Creating backup: hunters_almanac_backup_2025-08-16_09-49-24.sql
+2025-08-16 09:51:01 - CRITICAL - [BACKUP FATAL ERROR]: docker exec or pg_dump failed.
+2025-08-16 09:51:01 - CRITICAL -  -> STDERR: pg_dump: error: query failed: ERROR:  permission denied for table acquisition_log_template
+pg_dump: detail: Query was: LOCK TABLE public.source_domains, public.sources, public.acquisition_router, public.acquisition_log, public.cases, public.case_content, public.investigations, public.investigation_nodes, public.investigation_links, public.schema_version, public.acquisition_log_template, public.cases_template, public.case_content_template, partman.template_public_acquisition_log, public.acquisition_log_p20250801, public.acquisition_log_p20250901, public.acquisition_log_p20251001, public.acquisition_log_default, partman.template_public_cases, public.cases_p20250801, public.cases_p20250901, public.cases_p20251001, public.cases_default, partman.template_public_case_content, public.case_content_p20250801, public.case_content_p20250901, public.case_content_p20251001, public.case_content_default, public.system_tasks, public.processed_files_log, public.processed_file_outputs, public.model_metadata, public.media_evidence IN ACCESS SHARE MODE
+

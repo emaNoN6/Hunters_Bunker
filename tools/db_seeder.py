@@ -1,4 +1,7 @@
-# tools/db_seeder.py
+# ==========================================================
+# Hunter's Command Console - Definitive DB Seeder
+# Copyright (c) 2025, M. Stilson & Codex
+# ==========================================================
 
 import os
 import sys
@@ -24,10 +27,10 @@ def seed_database():
         {'domain_name': 'gnews.io', 'agent_type': 'gnews_io', 'max_concurrent_requests': 1},
         {'domain_name': 'testdata', 'agent_type': 'test_data', 'max_concurrent_requests': 1},
         {'domain_name': 'lorepodcast.com', 'agent_type': 'rss', 'max_concurrent_requests': 1},
-        {'domain_name': 'pocketcasts.com', 'agent_type': 'pocketcasts_json', 'max_concurrent_requests': 1}
+        {'domain_name': 'unexplainedpodcast.com', 'agent_type': 'rss', 'max_concurrent_requests': 1}
     ]
     for domain in domains_to_add:
-        db_manager.add_source_domain(domain) # <-- New DB function needed
+        db_manager.add_source_domain(domain)
 
     # --- Phase 2: Seed the Individual Sources ---
     print(" -> Seeding individual sources...")
@@ -39,12 +42,12 @@ def seed_database():
         {'source_name': 'GNews.io - Unexplained Phenomena', 'domain_name': 'gnews.io', 'target': '"unexplained phenomena"', 'purpose': 'lead_generation'},
         # Podcast Sources
         {'source_name': 'Lore Podcast', 'domain_name': 'lorepodcast.com', 'target': 'https://feeds.libsyn.com/65267/rss', 'purpose': 'training_material'},
-        {'source_name': 'Unexplained Podcast', 'domain_name': 'pocketcasts.com', 'target': 'https://podcasts.pocketcasts.com/...', 'purpose': 'training_material'},
+        {'source_name': 'Unexplained Podcast', 'domain_name': 'unexplainedpodcast.com', 'target': 'https://unexplainedpodcast.com/episodes?format=rss', 'purpose': 'training_material'},
         # Test Source
         {'source_name': 'Test Data Source', 'domain_name': 'testdata', 'target': 'test_leads.json', 'purpose': 'lead_generation'}
     ]
     for source in sources_to_add:
-        db_manager.add_source(source) # <-- This function will need to be updated
+        db_manager.add_source(source)
 
     print("[SEEDER]: Seeding complete.")
 

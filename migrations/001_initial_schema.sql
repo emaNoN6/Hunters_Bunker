@@ -11,13 +11,14 @@
  */
 
 -- === 0. SANDBOX SETUP ===
-CREATE SCHEMA IF NOT EXISTS testing;
-SET search_path = testing, public;
+-- uncomment to create a sandbox schema for testing
+-- CREATE SCHEMA IF NOT EXISTS sandbox;
+-- SET search_path = sandbox, public;
 
 -- === 1. EXTENSIONS ===
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS postgis;
+--CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
 -- partition management
 
@@ -124,8 +125,12 @@ $$;
 
 CREATE TABLE IF NOT EXISTS source_domains
 (
-    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    domain_name text NOT NULL UNIQUE
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    domain_name text NOT NULL,
+    agent_type text NOT NULL,
+    max_concurrent_requests integer DEFAULT 1 NOT NULL,
+    api_endpoint text,
+    notes text
 );
 
 CREATE TABLE IF NOT EXISTS sources
@@ -294,6 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_cases_location_geom ON cases USING GIST (location
 -- === 7. pg_partman INTEGRATION ===
 
 -- 7.0 Clean any stale partman configuration for these parents (important if schema was dropped earlier)
+/*
 DO
 $$
     BEGIN
@@ -314,7 +320,7 @@ $$
             );
     END
 $$;
-
+*/
 -- 7.1 Template tables define per-partition indexes/constraints
 
 DROP TABLE IF EXISTS acquisition_log_template CASCADE;
