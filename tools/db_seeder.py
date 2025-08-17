@@ -11,7 +11,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 # --- End Magic ---
 
-from hunter import db_manager
+from hunter import db_admin
 
 def seed_database():
     """
@@ -30,7 +30,7 @@ def seed_database():
         {'domain_name': 'unexplainedpodcast.com', 'agent_type': 'rss', 'max_concurrent_requests': 1}
     ]
     for domain in domains_to_add:
-        db_manager.add_source_domain(domain)
+        db_admin.add_source_domain(domain)
 
     # --- Phase 2: Seed the Individual Sources ---
     print(" -> Seeding individual sources...")
@@ -47,7 +47,7 @@ def seed_database():
         {'source_name': 'Test Data Source', 'domain_name': 'testdata', 'target': 'test_leads.json', 'purpose': 'lead_generation'}
     ]
     for source in sources_to_add:
-        db_manager.add_source(source)
+        db_admin.add_source(source)
 
     print("[SEEDER]: Seeding complete.")
 

@@ -12,14 +12,15 @@
 
 -- === 0. SANDBOX SETUP ===
 -- uncomment to create a sandbox schema for testing
--- CREATE SCHEMA IF NOT EXISTS sandbox;
--- SET search_path = sandbox, public;
+CREATE SCHEMA IF NOT EXISTS almanac;
+SET search_path = almanac, public;
 
 -- === 1. EXTENSIONS ===
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
---CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
+-- === THESE MUST BE RUN AS SUPERUSER ===
+-- CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- CREATE EXTENSION IF NOT EXISTS postgis;
+-- CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
 -- partition management
 
 -- === 2. CORE ENUMERATED TYPES ===
@@ -126,22 +127,30 @@ $$;
 CREATE TABLE IF NOT EXISTS source_domains
 (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    domain_name text NOT NULL,
+    domain_name text NOT NULL UNIQUE,
     agent_type text NOT NULL,
     max_concurrent_requests integer DEFAULT 1 NOT NULL,
     api_endpoint text,
     notes text
 );
 
-CREATE TABLE IF NOT EXISTS sources
+create table sources
 (
-    id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_name          text NOT NULL UNIQUE,
+    id                   bigint generated always as identity primary key,
+    source_name          text not null unique,
     domain_id            bigint,
     consecutive_failures integer,
-    last_success_date    timestamptz,
-    last_failure_date    timestamptz,
-    CONSTRAINT fk_sources_domain FOREIGN KEY (domain_id) REFERENCES source_domains (id) ON DELETE SET NULL
+    last_success_date    timestamp with time zone,
+    last_failure_date    timestamp with time zone,
+    target               text not null,
+    last_checked_date    timestamp with time zone,
+    strategy             text,
+    keywords             text,
+    is_active            boolean default true not null,
+    purpose              text default 'lead_generation'::text not null,
+    next_release_date    timestamp with time zone,
+    last_known_item_id   text,
+    constraint fk_sources_domain foreign key (domain_id) references source_domains (id) on delete set null
 );
 
 CREATE TABLE IF NOT EXISTS acquisition_router
@@ -885,6 +894,7 @@ $$
         func_signature   text;
         -- Tables that the app_user can only read from
         read_only_tables text[] := ARRAY [
+            'sources',
             'source_domains',
             'model_metadata',
             'schema_version'
@@ -908,6 +918,17 @@ $$
                     IF obj_name = ANY (read_only_tables) THEN
                         -- Grant read-only access for config/lookup tables
                         EXECUTE format('GRANT SELECT ON TABLE %I TO %I', obj_name, 'hunter_app_user');
+                        IF obj_name = 'sources' THEN
+                            EXECUTE format('GRANT UPDATE (
+                                          consecutive_failures,
+                                          last_success_date,
+                                          last_failure_date,
+                                          last_checked_date,
+                                          next_release_date,
+                                          last_known_item_id
+                                ) ON %I TO %I', obj_name, 'hunter_app_user');
+
+                        end if;
                     ELSE
                         -- Grant full access for all other (non-excluded) transactional tables
                         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I TO %I', obj_name,
@@ -945,7 +966,7 @@ $$
                 EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', func_signature, 'hunter_app_user');
             END LOOP;
 
-        GRANT USAGE ON SCHEMA public TO hunter_app_user;
+        GRANT USAGE ON SCHEMA almanac TO hunter_app_user;
     END;
 $$;
 -- Reset search path to default for the session
