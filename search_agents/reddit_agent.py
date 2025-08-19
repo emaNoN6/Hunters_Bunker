@@ -1,49 +1,92 @@
-# search_agents/reddit_agent.py
+# ==========================================================
+# Hunter's Command Console - Definitive Reddit Agent (Rate-Limit Aware)
+# Copyright (c) 2025, M. Stilson & Codex
+# ==========================================================
 
 import praw
-from hunter import db_manager  # Use relative import
+from datetime import datetime, timezone
+import time
 
 
-def hunt(log_queue, source, reddit_creds):
+def hunt(log_queue, source, credentials):
 	"""
-    Searches for new posts in a given subreddit.
-    Credentials are now passed in directly by the dispatcher.
-    """
+	Hunts a subreddit for new posts, reporting back its API rate-limit status.
+	"""
 	subreddit_name = source.get('target')
-	source_id = source.get('id')
+	last_known_id = source.get('last_known_item_id')
 	source_name = source.get('source_name')
 
 	log_queue.put(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
 
-	if not reddit_creds:
-		log_queue.put(f"[{source_name} ERROR]: Reddit API credentials were not provided by the dispatcher.")
-		return []
+	if not credentials:
+		log_queue.put(f"[{source_name} ERROR]: Reddit API credentials not provided.")
+		return [], None
 
-	results = []
+	leads = []
+	newest_id_found = None
+
 	try:
 		reddit = praw.Reddit(
-				client_id=reddit_creds['client_id'],
-				client_secret=reddit_creds['client_secret'],
-				user_agent=reddit_creds['user_agent']
+				client_id=credentials['client_id'],
+				client_secret=credentials['client_secret'],
+				user_agent=credentials['user_agent']
 		)
-
 		subreddit = reddit.subreddit(subreddit_name)
 
-		for submission in subreddit.new(limit=25):
-			# The dispatcher now handles checking the acquisition log,
-			# so the agent's only job is to gather the intel.
-			lead_data = {
-				"title":  submission.title,
-				"url":    submission.url,
-				"source": source_name,  # Use the clean name from the DB
-				"text":   submission.selftext,
-				"html":   submission.selftext_html if submission.selftext_html else f"<p>{submission.selftext}</p>"
-			}
-			results.append(lead_data)
+		# --- Rate Limit Check ---
+		# PRAW automatically handles rate limit sleeping, but we can inspect our status.
+		# The rate limit info is available after any successful API request.
+		# We'll check it once at the start of the hunt.
+		# Note: prawcore automatically refreshes tokens, so this is a safe check.
+		if reddit.auth.limits:
+			remaining = reddit.auth.limits.get('remaining')
+			reset_timestamp = reddit.auth.limits.get('reset_timestamp')  # Get the timestamp
 
-		log_queue.put(f"[{source_name}]: Found {len(results)} potential leads.")
-		return results
+			# THIS IS THE FIX: Only do the math if we have a timestamp
+			if reset_timestamp:
+				reset_seconds = reset_timestamp - time.time()
+				log_queue.put(
+					f"[{source_name}]: Rate Limit Status: {remaining} requests remaining. Reset in {int(reset_seconds)} seconds.")
+			else:
+				log_queue.put(
+					f"[{source_name}]: Rate Limit Status: {remaining} requests remaining. Reset time not available yet.")
+		# --- End Rate Limit Check ---
+
+		log_queue.put(f"[{source_name}]: Looking for posts newer than bookmark: {last_known_id}")
+
+		for submission in subreddit.new(limit=100):
+			if newest_id_found is None:
+				newest_id_found = submission.id
+
+			if submission.id == last_known_id:
+				log_queue.put(f"[{source_name}]: Found bookmark ({last_known_id}). Concluding hunt.")
+				break
+
+			if submission.stickied or not submission.is_self:
+				continue
+
+			publication_date = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
+
+			lead_data = {
+				"title":            submission.title,
+				"url":              f"https://www.reddit.com{submission.permalink}",
+				"text":             submission.selftext,
+				"html":             submission.selftext_html,
+				"publication_date": publication_date,
+				"source_name":      source_name,
+				"score":            submission.score,
+				"upvote_ratio":     submission.upvote_ratio,
+				"num_comments":     submission.num_comments,
+				"is_oc":            submission.is_original_content
+			}
+			leads.append(lead_data)
+
+		leads.reverse()
+
+		log_queue.put(f"[{source_name}]: Hunt successful. Returned {len(leads)} new leads.")
+
+		return leads, newest_id_found
 
 	except Exception as e:
-		log_queue.put(f"[{source_name} ERROR]: {e}")
-		return []
+		log_queue.put(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
+		return [], None

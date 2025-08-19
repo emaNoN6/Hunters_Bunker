@@ -38,13 +38,21 @@ def search_all_sources(log_queue):
 		if agent_module:
 			log_queue.put(f"[DISPATCHER]: Dispatching '{source.get('source_name')}' agent...")
 			try:
-				# Pass the specific credentials the agent needs.
-				if agent_type == 'gnews_io':
-					results = agent_module.hunt(log_queue, source, gnews_creds)
-				elif agent_type == 'reddit':
-					results = agent_module.hunt(log_queue, source, reddit_creds)
-				else:  # For agents that don't need keys
-					results = agent_module.hunt(log_queue, source)
+				match agent_type:
+					case 'gnews_io':
+						if not gnews_creds:
+							log_queue.put(f"[DISPATCHER ERROR]: No GNews.io API key found.")
+							continue
+						else:
+							results = agent_module.hunt(log_queue, source, gnews_creds)
+					case 'reddit':
+						if not reddit_creds:
+							log_queue.put(f"[DISPATCHER ERROR]: No Reddit API key found.")
+							continue
+						else:
+							results = agent_module.hunt(log_queue, source, reddit_creds)
+					case _:
+						results = agent_module.hunt(log_queue, source)
 
 				# The dispatcher is now responsible for logging
 				if results:

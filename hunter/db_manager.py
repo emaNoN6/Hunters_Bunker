@@ -7,10 +7,11 @@ import psycopg2
 import psycopg2.extras
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import config_manager
 
+psycopg2.extras.register_uuid()
 
 # --- Helper Function for Connections ---
 def get_db_connection():
@@ -19,10 +20,10 @@ def get_db_connection():
 		if not db_creds:
 			print("[DB_MANAGER ERROR]: PostgreSQL credentials not found.")
 			return None
-
 		db_creds['options'] = '-c search_path=almanac,public'
 		conn = psycopg2.connect(**db_creds)
 		return conn
+
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL: {e}")
 		return None
@@ -68,6 +69,21 @@ def verify_db_version():
 		if conn: conn.close()
 
 
+# --- Source Management ---
+def add_source_domain(domain_data):
+	sql = "INSERT INTO source_domains (domain_name, agent_type, max_concurrent_requests) VALUES (%s, %s, %s) ON CONFLICT (domain_name) DO NOTHING;"
+	conn = get_db_connection()
+	if not conn: return
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (domain_data['domain_name'], domain_data['agent_type'],
+			                     domain_data.get('max_concurrent_requests', 1)))
+			conn.commit()
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
+		conn.rollback()
+	finally:
+		if conn: conn.close()
 
 
 def get_source_domain_by_name(domain_name):
@@ -81,6 +97,27 @@ def get_source_domain_by_name(domain_name):
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Failed to get domain by name: {e}")
 		return None
+	finally:
+		if conn: conn.close()
+
+
+def add_source(source_data):
+	domain = get_source_domain_by_name(source_data.get('domain_name'))
+	if not domain:
+		print(f"[DB_MANAGER ERROR]: Domain '{source_data.get('domain_name')}' not found.")
+		return
+	sql = "INSERT INTO sources (source_name, target, domain_id, purpose) VALUES (%s, %s, %s, %s) ON CONFLICT (source_name) DO NOTHING;"
+	conn = get_db_connection()
+	if not conn: return
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (source_data['source_name'], source_data['target'], domain['id'],
+			                     source_data.get('purpose', 'lead_generation')))
+			conn.commit()
+			print(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
+		conn.rollback()
 	finally:
 		if conn: conn.close()
 
@@ -109,12 +146,11 @@ def log_acquisition(lead_data, source_id):
 
 	lead_uuid = lead_data.get('lead_uuid')
 	if not lead_uuid:
-		lead_uuid = str(uuid.uuid4())  # Generate UUID if agent didn't
+		lead_uuid = str(uuid.uuid4())
 		lead_data['lead_uuid'] = lead_uuid
 
 	try:
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-			# 1. Upsert into the router table
 			router_sql = """
             INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at)
             VALUES (%s, %s, %s, now())
@@ -123,7 +159,6 @@ def log_acquisition(lead_data, source_id):
             """
 			cursor.execute(router_sql, (lead_uuid, source_id, lead_data.get('url')))
 
-			# 2. Append to the historical log
 			log_sql = "INSERT INTO acquisition_log (lead_uuid, source_id) VALUES (%s, %s);"
 			cursor.execute(log_sql, (lead_uuid, source_id))
 
@@ -148,7 +183,7 @@ def check_acquisition_router(lead_uuid):
 			return cursor.fetchone() is not None
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Failed to check acquisition router: {e}")
-		return False  # Assume not found on error
+		return False
 	finally:
 		if conn: conn.close()
 
@@ -169,18 +204,25 @@ def add_case(lead_data):
 			case_sql = """
             INSERT INTO cases (lead_uuid, public_uuid, title, url, publication_date, status)
             VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (url, publication_date) DO NOTHING
             RETURNING id, publication_date;
             """
 			cursor.execute(case_sql, (
 				lead_uuid,
-				uuid.uuid4(),  # Generate a new public_uuid for the case
+				uuid.uuid4(),
 				lead_data.get("title"),
 				lead_data.get("url"),
 				lead_data.get("publication_date"),
 				'TRIAGED'
 			))
 			case_result = cursor.fetchone()
-			if not case_result: raise Exception("Failed to create case.")
+
+			# If ON CONFLICT caused nothing to be inserted, case_result will be None.
+			if not case_result:
+				print(f"[DB_MANAGER]: Case already exists (URL & Date): {lead_data.get('title')}")
+				conn.rollback()  # Rollback the transaction to be clean
+				return None
+
 			case_id = case_result['id']
 			pub_date = case_result['publication_date']
 
@@ -192,9 +234,10 @@ def add_case(lead_data):
 			cursor.execute(content_sql,
 			               (case_id, lead_uuid, pub_date, lead_data.get("text", ""), lead_data.get("html", "")))
 
-			# Update the acquisition log status
-			update_sql = "UPDATE acquisition_log SET processed_status = 'PROCESSED', processed_at = now() WHERE lead_uuid = %s;"
-			cursor.execute(update_sql, (lead_uuid,))
+			# --- THIS IS THE FIX ---
+			# The 'processed_status' column was removed from acquisition_log.
+			# This UPDATE statement is no longer needed and has been deleted.
+			# --- END FIX ---
 
 			conn.commit()
 			print(f"[DB_MANAGER]: Successfully filed new case: {lead_data.get('title')}")
@@ -204,4 +247,95 @@ def add_case(lead_data):
 		if conn: conn.rollback()
 		return None
 	finally:
+		if conn:
+			conn.close()
+
+def get_random_cases_for_testing(limit=20):
+	sql = "SELECT c.*, cc.full_text, cc.full_html FROM cases c JOIN case_content cc ON c.id = cc.case_id WHERE cc.full_html IS NOT NULL AND cc.full_html != '' ORDER BY RANDOM() LIMIT %s;"
+	conn = get_db_connection()
+	if not conn: return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (limit,))
+			cases = cursor.fetchall()
+			return [dict(row) for row in cases]
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to get random cases: {e}")
+		return []
+	finally:
 		if conn: conn.close()
+
+def get_source_by_name(name):
+	sql = "SELECT * FROM sources WHERE source_name = %s;"
+	conn = get_db_connection()
+	if not conn: return None
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (name,))
+			return cursor.fetchone()
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to get source by name: {e}")
+		return None
+
+
+def update_source_state(source_id, hunt_results):
+	"""
+	Updates the operational state of a source after a hunt.
+	This is called by the dispatcher using the standard app user connection.
+
+	Args:
+		source_id (int): The ID of the source to update.
+		hunt_results (dict): A dictionary containing the outcome, with keys like:
+			'success' (bool): Whether the hunt was successful.
+			'new_bookmark_id' (str, optional): The new last_known_item_id.
+	"""
+	conn = get_db_connection()  # Uses the standard app_user connection
+	if not conn:
+		return
+
+	try:
+		with conn.cursor() as cursor:
+			# Use the bookmark_id from the results, falling back to the existing one if not provided
+			# This handles cases like GNews where no bookmark is returned
+			new_bookmark = hunt_results.get('new_bookmark_id')
+
+			if hunt_results['success']:
+				# If the hunt was successful, reset failures and update success date
+				sql = """
+                    UPDATE sources
+                    SET
+                        last_checked_date = %s,
+                        last_success_date = %s,
+                        consecutive_failures = 0,
+                        last_known_item_id = COALESCE(%s, last_known_item_id)
+                    WHERE id = %s;
+                """
+				cursor.execute(sql, (
+					datetime.now(timezone.utc),
+					datetime.now(timezone.utc),
+					new_bookmark,
+					source_id
+				))
+			else:
+				# If the hunt failed, increment the failure count
+				sql = """
+                    UPDATE sources
+                    SET
+                        last_checked_date = %s,
+                        last_failure_date = %s,
+                        consecutive_failures = consecutive_failures + 1
+                    WHERE id = %s;
+                """
+				cursor.execute(sql, (
+					datetime.now(timezone.utc),
+					datetime.now(timezone.utc),
+					source_id
+				))
+
+			conn.commit()
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to update source state for source_id {source_id}: {e}")
+		conn.rollback()
+	finally:
+		if conn:
+			conn.close()

@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS cases
     public_uuid      uuid                 DEFAULT gen_random_uuid(),
     title            text        NOT NULL,
     url              text        NOT NULL,
+    source_name      text,
     publication_date timestamptz NOT NULL,
     modified_date    timestamptz NOT NULL DEFAULT now(),
     triage_date      timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -191,7 +192,8 @@ CREATE TABLE IF NOT EXISTS cases
     severity_score   numeric(10, 2),
     location_geom    geometry(Point, 4326),
     PRIMARY KEY (id, publication_date),
-    CONSTRAINT fk_cases_lead_uuid FOREIGN KEY (lead_uuid) REFERENCES acquisition_router (lead_uuid) ON DELETE SET NULL
+    CONSTRAINT fk_cases_lead_uuid FOREIGN KEY (lead_uuid) REFERENCES acquisition_router (lead_uuid) ON DELETE SET NULL,
+    CONSTRAINT cases_url_publication_date_key UNIQUE (url, publication_date)
 ) PARTITION BY RANGE (publication_date);
 COMMENT ON TABLE cases IS 'Holds the metadata for a case, including its status and publication date.';
 COMMENT ON COLUMN cases.title IS 'The title of the case.';
