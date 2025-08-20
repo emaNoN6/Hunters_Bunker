@@ -202,14 +202,16 @@ def add_case(lead_data):
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
 			# Insert into the main cases table
 			case_sql = """
-            INSERT INTO cases (lead_uuid, public_uuid, title, url, publication_date, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (url, publication_date) DO NOTHING
             RETURNING id, publication_date;
             """
 			cursor.execute(case_sql, (
 				lead_uuid,
 				uuid.uuid4(),
+				lead_data.get("source_id"),
+				lead_data.get("source_name"),
 				lead_data.get("title"),
 				lead_data.get("url"),
 				lead_data.get("publication_date"),
@@ -264,6 +266,37 @@ def get_random_cases_for_testing(limit=20):
 		return []
 	finally:
 		if conn: conn.close()
+
+# Add this function to your hunter/db_manager.py file
+
+def get_triage_cases(limit=100):
+    """
+    Fetches a list of the most recent cases for the GUI triage pane.
+    """
+    sql = """
+        SELECT
+            id,
+            title,
+            source_name,
+            publication_date
+        FROM cases
+        WHERE status = 'TRIAGED' OR status = 'NEW'
+        ORDER BY publication_date DESC
+        LIMIT %s;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get triage cases: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 def get_source_by_name(name):
 	sql = "SELECT * FROM sources WHERE source_name = %s;"
@@ -339,3 +372,16 @@ def update_source_state(source_id, hunt_results):
 	finally:
 		if conn:
 			conn.close()
+
+
+def get_all_tasks():
+	sql = "SELECT * FROM system_tasks;"
+	conn = get_db_connection()
+	if not conn: return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql)
+			return [dict(row) for row in cursor.fetchall()]
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to get all tasks: {e}")
+		return []

@@ -22,41 +22,25 @@ from search_agents import reddit_agent, gnews_io_agent
 def setup_seed_sources(log_queue):
 	"""
 	Ensures the necessary source_domains and sources for seeding exist in the DB.
-	This is an admin function.
 	"""
 	log_queue.put("[SEEDER]: Verifying seed sources exist...")
 
-	# Define the sources we need for this seeder
 	required_sources = {
-		"r/paranormal": {
-			"domain_name": "reddit.com",
-			"agent_type":  "reddit",
-			"target":      "paranormal",
-			"purpose":     "lead_generation"
+		"Reddit Paranormal":    {
+			"domain_name": "reddit.com", "agent_type": "reddit", "target": "paranormal"
 		},
-		"GNews.io":     {
-			"domain_name": "gnews.io",
-			"agent_type":  "gnews",
-			"target":      '"unexplained phenomena"',
-			"purpose":     "lead_generation"
+		"GNews.io Unexplained": {
+			"domain_name": "gnews.io", "agent_type": "gnews", "target": '"unexplained phenomena"'
 		}
 	}
 
-	# Ensure domains exist first
 	db_admin.add_source_domain({"domain_name": "reddit.com", "agent_type": "reddit"})
 	db_admin.add_source_domain({"domain_name": "gnews.io", "agent_type": "gnews"})
 
-	# Now, ensure sources exist and get their real DB info
 	live_sources = {}
 	for name, data in required_sources.items():
-		# This is the crucial fix:
-		# We take the key of the dictionary (e.g., "Reddit Paranormal")
-		# and add it into the data dictionary itself.
 		data['source_name'] = name
-
-		# Now, when we call add_source, the 'source_name' key exists
 		db_admin.add_source(data)
-
 		source_info = db_manager.get_source_by_name(name)
 		if source_info:
 			live_sources[name] = source_info
@@ -68,11 +52,10 @@ def setup_seed_sources(log_queue):
 	return live_sources
 
 
-def seed_cases(log_queue, reddit_count=10, other_count=10):
+def seed_cases(log_queue, count=20):
 	"""
 	Runs live search agents and correctly seeds the database.
 	"""
-	# First, run the setup to ensure our sources exist
 	live_sources = setup_seed_sources(log_queue)
 	if not live_sources:
 		return
@@ -82,23 +65,30 @@ def seed_cases(log_queue, reddit_count=10, other_count=10):
 
 	all_leads = []
 
-	# --- Hunt for Intel using REAL source data ---
 	# Hunt Reddit
-	if reddit_creds and "r/paranormal" in live_sources:
+	if reddit_creds and "Reddit Paranormal" in live_sources:
 		log_queue.put(" -> Hunting Reddit for fresh intel...")
-		reddit_source = live_sources["r/paranormal"]
+		reddit_source = live_sources["Reddit Paranormal"]
 		reddit_leads, _ = reddit_agent.hunt(log_queue, reddit_source, reddit_creds)
 		for lead in reddit_leads:
+			# --- THIS IS THE FIX ---
+			# Attach the full source intel to the lead
 			lead['source_id'] = reddit_source['id']
+			lead['source_name'] = reddit_source['source_name']
+		# --- END FIX ---
 		all_leads.extend(reddit_leads)
 
 	# Hunt GNews
-	if gnews_creds and "GNews.io" in live_sources:
+	if gnews_creds and "GNews.io Unexplained" in live_sources:
 		log_queue.put(" -> Hunting GNews.io for fresh intel...")
-		gnews_source = live_sources["GNews.io"]
+		gnews_source = live_sources["GNews.io Unexplained"]
 		gnews_leads, _ = gnews_io_agent.hunt(log_queue, gnews_source, gnews_creds)
 		for lead in gnews_leads:
+			# --- THIS IS THE FIX ---
+			# Attach the full source intel to the lead
 			lead['source_id'] = gnews_source['id']
+			lead['source_name'] = gnews_source['source_name']
+		# --- END FIX ---
 		all_leads.extend(gnews_leads)
 
 	if not all_leads:
@@ -108,11 +98,7 @@ def seed_cases(log_queue, reddit_count=10, other_count=10):
 	log_queue.put(f"[SEEDER]: Agents returned with {len(all_leads)} total leads. Filtering and filing...")
 
 	random.shuffle(all_leads)
-	leads_to_add = all_leads[:(reddit_count + other_count)]
-
-	if not leads_to_add:
-		log_queue.put("[SEEDER]: Could not find any leads to add. Aborting.")
-		return
+	leads_to_add = all_leads[:count]
 
 	log_queue.put(f"[SEEDER]: Seeding database with {len(leads_to_add)} cases...")
 
@@ -140,4 +126,3 @@ if __name__ == "__main__":
 	start_console_log_consumer(log_queue)
 	seed_cases(log_queue)
 	time.sleep(1)
-

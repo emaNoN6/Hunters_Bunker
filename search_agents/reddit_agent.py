@@ -1,16 +1,17 @@
 # ==========================================================
-# Hunter's Command Console - Definitive Reddit Agent (Rate-Limit Aware)
+# Hunter's Command Console - Definitive Reddit Agent (v2)
 # Copyright (c) 2025, M. Stilson & Codex
 # ==========================================================
 
 import praw
-from datetime import datetime, timezone
 import time
+from datetime import datetime, timezone
 
 
 def hunt(log_queue, source, credentials):
 	"""
-	Hunts a subreddit for new posts, reporting back its API rate-limit status.
+	Hunts a subreddit for new posts since the last check, using the
+	last_known_item_id as a bookmark.
 	"""
 	subreddit_name = source.get('target')
 	last_known_id = source.get('last_known_item_id')
@@ -34,15 +35,9 @@ def hunt(log_queue, source, credentials):
 		subreddit = reddit.subreddit(subreddit_name)
 
 		# --- Rate Limit Check ---
-		# PRAW automatically handles rate limit sleeping, but we can inspect our status.
-		# The rate limit info is available after any successful API request.
-		# We'll check it once at the start of the hunt.
-		# Note: prawcore automatically refreshes tokens, so this is a safe check.
 		if reddit.auth.limits:
 			remaining = reddit.auth.limits.get('remaining')
-			reset_timestamp = reddit.auth.limits.get('reset_timestamp')  # Get the timestamp
-
-			# THIS IS THE FIX: Only do the math if we have a timestamp
+			reset_timestamp = reddit.auth.limits.get('reset_timestamp')
 			if reset_timestamp:
 				reset_seconds = reset_timestamp - time.time()
 				log_queue.put(

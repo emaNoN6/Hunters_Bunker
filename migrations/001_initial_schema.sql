@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS cases
     public_uuid      uuid                 DEFAULT gen_random_uuid(),
     title            text        NOT NULL,
     url              text        NOT NULL,
+    source_id        bigint,
     source_name      text,
     publication_date timestamptz NOT NULL,
     modified_date    timestamptz NOT NULL DEFAULT now(),
@@ -193,7 +194,8 @@ CREATE TABLE IF NOT EXISTS cases
     location_geom    geometry(Point, 4326),
     PRIMARY KEY (id, publication_date),
     CONSTRAINT fk_cases_lead_uuid FOREIGN KEY (lead_uuid) REFERENCES acquisition_router (lead_uuid) ON DELETE SET NULL,
-    CONSTRAINT cases_url_publication_date_key UNIQUE (url, publication_date)
+    CONSTRAINT cases_url_publication_date_key UNIQUE (url, publication_date),
+    constraint fk_cases_source foreign key (source_id) references sources (id) on delete set null
 ) PARTITION BY RANGE (publication_date);
 COMMENT ON TABLE cases IS 'Holds the metadata for a case, including its status and publication date.';
 COMMENT ON COLUMN cases.title IS 'The title of the case.';
@@ -205,6 +207,8 @@ COMMENT ON COLUMN cases.status IS 'The status of the case.';
 COMMENT ON COLUMN cases.category IS 'The category of the case.';
 COMMENT ON COLUMN cases.severity_score IS 'The severity score of the case from 0.0 to 1.0.';
 COMMENT ON COLUMN cases.location_geom IS 'The location of the case, as a geometry.';
+comment on column cases.source_id is 'The ID linked to the sources table of the source that this case came from.';
+COMMENT ON COLUMN cases.source_name IS 'The name of the source that this case came from.  Preserved in case source name changes.';
 
 CREATE TABLE IF NOT EXISTS case_content
 (

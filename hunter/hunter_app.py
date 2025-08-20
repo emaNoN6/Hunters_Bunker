@@ -152,7 +152,7 @@ class HunterApp(ctk.CTk):
 		self.triage_items.clear()
 		grouped_results = {}
 		for lead in results:
-			source = lead.get("source", "Unknown Source")
+			source = lead.get("source_name", "Unknown Source")
 			if source not in grouped_results:
 				grouped_results[source] = []
 			grouped_results[source].append(lead)
@@ -314,7 +314,7 @@ class HunterApp(ctk.CTk):
 				self.log_textbox.configure(state="normal")
 				timestamp = f"{datetime.now().strftime('%H:%M:%S')} - "
 				self.log_textbox.insert("end", timestamp, "TIMESTAMP")
-				tag_match = re.search(r"^(\[.*?\])", msg)
+				tag_match = re.search(r"^(\[.*?])", msg)
 				if tag_match:
 					tag = tag_match.group(1)
 					if "ERROR" in tag or "FATAL" in tag:
