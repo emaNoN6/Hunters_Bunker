@@ -385,3 +385,16 @@ def get_all_tasks():
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Failed to get all tasks: {e}")
 		return []
+
+
+def check_acquisition_log(url):
+	sql = "SELECT 1 FROM acquisition_router WHERE item_url = %s;"
+	conn = get_db_connection()
+	if not conn: return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (url,))
+			return cursor.fetchone() is not None
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to check acquisition log for URL {url}: {e}")
+		return False

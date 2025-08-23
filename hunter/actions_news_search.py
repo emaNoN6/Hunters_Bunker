@@ -44,30 +44,34 @@ def search_all_sources(log_queue):
 							log_queue.put(f"[DISPATCHER ERROR]: No GNews.io API key found.")
 							continue
 						else:
-							results = agent_module.hunt(log_queue, source, gnews_creds)
+							leads, newest_id = agent_module.hunt(log_queue, source, gnews_creds)
 					case 'reddit':
 						if not reddit_creds:
 							log_queue.put(f"[DISPATCHER ERROR]: No Reddit API key found.")
 							continue
 						else:
-							results = agent_module.hunt(log_queue, source, reddit_creds)
+							leads, newest_id = agent_module.hunt(log_queue, source, reddit_creds)
 					case _:
-						results = agent_module.hunt(log_queue, source)
+						leads, newest_id = agent_module.hunt(log_queue, source)
 
 				# The dispatcher is now responsible for logging
-				if results:
+				if leads:
 					new_leads = []
-					for lead in results:
+					for lead in leads:
 						if not db_manager.check_acquisition_log(lead['url']):
 							new_leads.append(lead)
-							db_manager.log_acquisition(lead['url'], source['id'], lead['title'], 'PROCESSED')
+							# Log full lead payload with source_id; db_manager will handle router/log
+							db_manager.log_acquisition(lead, source['id'])
 						else:
 							log_queue.put(f"[DISPATCHER]: Discarding old lead: {lead['title']}")
 					all_results.extend(new_leads)
 
-				db_manager.update_source_check_time(source['id'])
+				# Update source state: success with optional bookmark
+				db_manager.update_source_state(source['id'], {"success": True, "new_bookmark_id": newest_id})
 			except Exception as e:
 				log_queue.put(f"[DISPATCHER ERROR]: Agent '{source.get('source_name')}' failed: {e}")
+				# Mark source check as failed
+				db_manager.update_source_state(source['id'], {"success": False})
 		else:
 			log_queue.put(f"[DISPATCHER WARNING]: No agent found for agent type '{agent_type}'.")
 

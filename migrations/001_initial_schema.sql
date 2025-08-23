@@ -1,4 +1,4 @@
-/*
+﻿/*
  * # ==========================================================
  * # Hunter's Command Console - Definitive Initial Schema (Schema-Agnostic)
  * #
