@@ -7,6 +7,7 @@ import json
 import os
 import random
 from datetime import datetime, timezone, timedelta
+from hunter.path_utils import project_path
 
 
 def hunt(log_queue, source, credentials=None):
@@ -19,13 +20,11 @@ def hunt(log_queue, source, credentials=None):
 
 	log_queue.put(f"[{source_name}]: Waking up. Loading test data from '{file_path}'...")
 
-	# Construct the full path to the data file, assuming it's in a 'data' directory
-	# relative to the project root.
+	# Construct the full path to the data file relative to the project root.
 	try:
-		project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-		full_path = os.path.join(project_root, 'data', file_path)
+		full_path = project_path('data', file_path, start_path=__file__)
 
-		with open(full_path, 'r') as f:
+		with open(str(full_path), 'r') as f:
 			test_leads = json.load(f)
 	except FileNotFoundError:
 		log_queue.put(f"[{source_name} ERROR]: Test data file not found at '{full_path}'.")

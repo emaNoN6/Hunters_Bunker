@@ -495,24 +495,22 @@ ALTER TABLE ONLY processed_files_log
     ADD CONSTRAINT processed_files_log_pkey PRIMARY KEY (file_hash);
 GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE processed_files_log TO hunter_app_user;
 
+CREATE SEQUENCE processed_file_outputs_id_seq
+  START WITH 1
+  INCREMENT BY 1
+  NO MINVALUE
+  NO MAXVALUE
+  CACHE 1;
+
 CREATE TABLE IF NOT EXISTS processed_file_outputs
 (
-    id               integer NOT NULL,
+    id               integer NOT NULL DEFAULT nextval('processed_file_outputs_id_seq'),
     parent_file_hash text    NOT NULL,
     output_path      text    NOT NULL
 );
 ALTER TABLE processed_file_outputs
     OWNER TO hunter_admin;
 COMMENT ON TABLE processed_file_outputs IS 'A manifest linking a processed file to all of its generated output text chunks.';
-ALTER TABLE processed_file_outputs
-    ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-        SEQUENCE NAME processed_file_outputs_id_seq
-        START WITH 1
-        INCREMENT BY 1
-        NO MINVALUE
-        NO MAXVALUE
-        CACHE 1
-        );
 SELECT pg_catalog.setval('processed_file_outputs_id_seq', 1, false);
 ALTER TABLE ONLY processed_file_outputs
     ADD CONSTRAINT processed_file_outputs_output_path_key UNIQUE (output_path);
@@ -541,10 +539,26 @@ ALTER TABLE ONLY model_metadata
     ADD CONSTRAINT model_metadata_pkey PRIMARY KEY (model_name);
 GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE model_metadata TO hunter_app_user;
 
+SET SEARCH_PATH TO almanac,public;
+CREATE TABLE keyword_library (
+  keyword TEXT NOT NULL,
+  theme TEXT NOT NULL DEFAULT 'uncategorized',
+  PRIMARY KEY(keyword, theme)
+);
+ALTER TABLE keyword_library OWNER TO hunter_admin;
+GRANT SELECT ON TABLE keyword_library TO hunter_app_user;
+
 -- media_evidence with composite FK to cases
+CREATE SEQUENCE media_evidence_id_seq
+  START WITH 1
+  INCREMENT BY 1
+  NO MINVALUE
+  NO MAXVALUE
+  CACHE 1;
+
 CREATE TABLE IF NOT EXISTS media_evidence
 (
-    id                    integer     NOT NULL,
+    id                    integer     NOT NULL DEFAULT nextval('media_evidence_id_seq'),
     public_uuid           uuid        NOT NULL,
     case_id               bigint      NOT NULL,
     case_publication_date timestamptz NOT NULL,
@@ -570,15 +584,6 @@ COMMENT ON TABLE media_evidence IS 'The evidence locker for all non-textual inte
 COMMENT ON COLUMN media_evidence.location_type IS 'Enum-style field indicating if the evidence location is LOCAL, REMOTE, or ARCHIVED.';
 COMMENT ON COLUMN media_evidence.thumbnail_path IS 'A local file path to a small, pre-generated thumbnail for fast GUI previews.';
 COMMENT ON COLUMN media_evidence.location_geom IS 'The precise geographic coordinate where a piece of evidence was captured, for fine-grained spatial analysis.';
-ALTER TABLE media_evidence
-    ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-        SEQUENCE NAME media_evidence_id_seq
-        START WITH 1
-        INCREMENT BY 1
-        NO MINVALUE
-        NO MAXVALUE
-        CACHE 1
-        );
 SELECT pg_catalog.setval('media_evidence_id_seq', 1, false);
 CREATE INDEX IF NOT EXISTS idx_media_evidence_case_ref
     ON media_evidence (case_id, case_publication_date);
@@ -655,6 +660,20 @@ WHERE i.status = 'ACTIVE'
 GROUP BY i.id;
 ALTER VIEW active_investigations OWNER TO hunter_admin;
 COMMENT ON VIEW active_investigations IS 'Shows all active investigations with their node and link counts.';
+
+-- Temporary holding table for freshly acquired, unprocessed cases
+CREATE TABLE case_data_staging (
+  id BIGSERIAL PRIMARY KEY,                       -- surrogate key for fast internal use
+  uuid UUID NOT NULL UNIQUE,                      -- foreign key and unique global identifier
+  title TEXT NOT NULL,                            -- item title
+  full_text TEXT NOT NULL,                        -- raw text content
+  full_html TEXT,                                 -- raw HTML content, optional if available
+  CONSTRAINT fk_acquisition_router FOREIGN KEY (uuid)
+    REFERENCES acquisition_router(lead_uuid) ON DELETE CASCADE
+);
+COMMENT ON TABLE case_data_staging IS 'Holding table for freshly acquired case data';
+ALTER TABLE case_data_staging OWNER TO Hunter_Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE case_data_staging TO hunter_app_user;
 
 -- missing functions
 --
