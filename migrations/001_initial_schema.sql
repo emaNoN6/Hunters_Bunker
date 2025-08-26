@@ -537,10 +537,9 @@ COMMENT ON COLUMN model_metadata.case_word_count IS 'The total word count of the
 COMMENT ON COLUMN model_metadata.not_case_word_count IS 'The total word count of the ''not_a_case'' data the model was trained on, used for staleness checks.';
 ALTER TABLE ONLY model_metadata
     ADD CONSTRAINT model_metadata_pkey PRIMARY KEY (model_name);
-GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE model_metadata TO hunter_app_user;
+GRANT SELECT ON TABLE model_metadata TO hunter_app_user;
 
-SET SEARCH_PATH TO almanac,public;
-CREATE TABLE keyword_library (
+CREATE TABLE IF NOT EXISTS keyword_library (
   keyword TEXT NOT NULL,
   theme TEXT NOT NULL DEFAULT 'uncategorized',
   PRIMARY KEY(keyword, theme)

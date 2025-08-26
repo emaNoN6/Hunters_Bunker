@@ -6,6 +6,7 @@ __pycache__/
 # IDE Configuration
 .vscode/
 .idea/
+*.design
 
 # Generated Artifacts & Data
 cache/

@@ -1,58 +1,64 @@
 # ==========================================================
-# Hunter's Command Console - Definitive Keyword Populator
+# Hunter's Command Console - Keyword Populator (from File)
 # Copyright (c) 2025, M. Stilson & Codex
 # ==========================================================
 
 import os
 import sys
-import time
 
-# --- Pathing Magic ---
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-# --- End Magic ---
+# --- NEW Centralized Pathing ---
+# Using the new project utility to handle path setup.
+# This makes the script runnable from any location.
+from hunter.path_utils import project_path
 
-from hunter import db_admin, config_manager
-from hunter import llm_helper
+# --- End Pathing ---
+
+from hunter import db_admin
+
+# --- Configuration ---
+# The path to your curated keyword file, relative to the project root.
+KEYWORD_FILE_PATH = "data/curated_keywords.csv"
+
+# The themes in the order they appear in the file.
+THEMES = ["GHOST", "DEMON", "CRYPTOZOOLOGY"]
 
 
-def populate_library():
+def populate_library_from_file():
 	"""
-	Uses the Gemini LLM to generate and populate the keyword library.
+	Reads a curated, comma-separated file and populates the keyword library.
 	"""
-	print("Populating keyword library using Gemini API...")
+	print(f"Populating keyword library from '{KEYWORD_FILE_PATH}'...")
 
-#	api_key = config_manager.get_gemini_credentials().get('api_key')
-	api_key = "AIzaSyAdtu0jH7at-DV9LjdQlmpfrvVXUCv-S7o"
-	if not api_key:
-		print("Gemini API key not found in config.ini. Aborting.")
+	full_path = project_path(KEYWORD_FILE_PATH, start_path=__file__)
+
+	try:
+		with open(full_path, 'r') as f:
+			lines = f.readlines()
+	except FileNotFoundError:
+		print(f"[ERROR]: Keyword file not found at '{full_path}'. Aborting.")
 		return
 
-	themes_to_generate = {
-		"GHOST":         "Generate a comprehensive, comma-separated list of keywords, synonyms, and related terms for ghost sightings, hauntings, and apparitions.",
-		"DEMON":         "Generate a comprehensive, comma-separated list of keywords, synonyms, and related terms for demonic possession, entities, and exorcisms.",
-		"CRYPTOZOOLOGY": "Generate a comprehensive, comma-separated list of keywords, synonyms, and related terms for cryptids, mythical creatures, and unknown animals like Bigfoot or Mothman."
-	}
-
 	all_keywords_to_add = []
+	theme_index = 0
 
-	for theme, prompt in themes_to_generate.items():
-		print(f" -> Generating keywords for theme: {theme}")
-
-		keyword_string = llm_helper.generate_text(prompt, api_key)
-
-		if not keyword_string:
-			print(f" -> Failed to generate keywords for {theme}. Skipping.")
+	for line in lines:
+		line = line.strip()
+		if not line:  # Skip blank lines
 			continue
 
-		keywords = [k.strip().lower() for k in keyword_string.split(',')]
+		if theme_index < len(THEMES):
+			theme = THEMES[theme_index]
+			keywords = [k.strip().lower() for k in line.split(',')]
 
-		for keyword in keywords:
-			if keyword:
-				all_keywords_to_add.append((keyword, theme))
+			print(f" -> Found {len(keywords)} keywords for theme: {theme}")
 
-		# Be polite to the API, wait a second between calls
-		time.sleep(1)
+			for keyword in keywords:
+				if keyword:  # Avoid empty strings
+					all_keywords_to_add.append((keyword, theme))
+
+			theme_index += 1
+		else:
+			print(f"[WARNING]: Found more data lines than expected themes. Ignoring extra line: '{line[:50]}...'")
 
 	if all_keywords_to_add:
 		print(f"Adding a total of {len(all_keywords_to_add)} keywords to the database...")
@@ -62,4 +68,4 @@ def populate_library():
 
 
 if __name__ == "__main__":
-	populate_library()
+	populate_library_from_file()
