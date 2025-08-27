@@ -23,6 +23,12 @@ SET search_path = almanac, public;
 -- CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
 -- partition management
 
+-- === 1. Some default privileges ===
+-- For any NEW SEQUENCES created by hunter_admin in this schema,
+-- automatically grant the app user the ability to use them.
+ALTER DEFAULT PRIVILEGES FOR ROLE hunter_admin IN SCHEMA almanac
+GRANT USAGE, SELECT ON SEQUENCES TO hunter_app_user;
+
 -- === 2. CORE ENUMERATED TYPES ===
 DO
 $$
@@ -161,6 +167,7 @@ CREATE TABLE IF NOT EXISTS acquisition_router
     item_url        text,
     first_seen_at   timestamptz NOT NULL DEFAULT now(),
     last_seen_at    timestamptz NOT NULL DEFAULT now(),
+    publication_date  timestamptz,
     CONSTRAINT fk_router_source FOREIGN KEY (source_id) REFERENCES sources (id) ON DELETE SET NULL
 );
 
@@ -474,7 +481,7 @@ VALUES ('CHECK_MODEL_STALENESS', 'PENDING', NULL, NULL),
 ON CONFLICT DO NOTHING;
 ALTER TABLE ONLY system_tasks
     ADD CONSTRAINT system_tasks_pkey PRIMARY KEY (task_name);
-GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE system_tasks TO hunter_app_user;
+GRANT SELECT ON TABLE system_tasks TO hunter_app_user;
 
 -- processed_files_log
 CREATE TABLE IF NOT EXISTS processed_files_log

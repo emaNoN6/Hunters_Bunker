@@ -16,11 +16,11 @@ from datetime import datetime
 from PIL import Image
 import tkinterweb
 from functools import partial
+from hunter import dispatcher
 
 # --- Our Custom Tools ---
 # These imports are now correct for our final package structure.
 from . import config_manager
-from . import actions_news_search
 from . import db_manager
 from .custom_widgets.tooltip import CTkToolTip
 from .html_parsers import html_sanitizer, link_extractor
@@ -132,26 +132,44 @@ class HunterApp(ctk.CTk):
 	def start_search_thread(self):
 		self.log_message("[APP]: Hunter dispatch requested...")
 		self.search_button.configure(state="disabled")
-		threading.Thread(target=self.run_search, daemon=True).start()
+		threading.Thread(target=self.dispatch_hunt(), daemon=True).start()
 
-	def run_search(self):
-		if config_manager.is_debug_mode():
-			self.log_message("[APP DEBUG]: Running in debug mode. Fetching test cases from archive...")
-			results = db_manager.get_random_cases_for_testing(20)
-		else:
-			self.log_message("[APP]: Hunter dispatched. Searching for new cases...")
-			results = actions_news_search.search_all_sources(self.log_queue)
-		self.after(0, self.populate_triage_list, results)
+	def dispatch_hunt(self):
+		"""
+		Kicks off a new intel-gathering hunt in a background thread.
+		This replaces the old 'run_search'.
+		"""
+		self.search_button.configure(state="disabled")
+		self.log_message("[APP]: Dispatcher activated. Hunting for new intel...")
+
+		# Run the hunt in a separate thread to keep the GUI responsive
+		hunt_thread = threading.Thread(target=self._hunt_thread_worker)
+		hunt_thread.start()
+
+	def _hunt_thread_worker(self):
+		"""The actual work of the hunt, run in a background thread."""
+		# Call our new, definitive dispatcher
+		dispatcher.run_hunt(self.log_queue)
+
+		# When the hunt is done, safely tell the main GUI thread to refresh the list
+		self.after(0, self.refresh_triage_list)
 		self.after(0, lambda: self.search_button.configure(state="normal"))
-		if not config_manager.is_debug_mode():
-			self.log_message("[APP]: All agents have returned.")
+		self.log_message("[APP]: Dispatcher has completed all hunts.")
 
-	def populate_triage_list(self, results):
+	def refresh_triage_list(self):
+		"""
+		Fetches the latest untriaged leads from the database and updates the GUI.
+		This replaces the old 'populate_triage_list'.
+		"""
+		self.log_message("[APP]: Refreshing Triage list from database...")
+
+		# 1. Get the fresh intel directly from our new db_manager function
+		staged_leads = db_manager.get_staged_leads()
 		for widget in self.scrollable_frame.winfo_children():
 			widget.destroy()
 		self.triage_items.clear()
 		grouped_results = {}
-		for lead in results:
+		for lead in staged_leads:
 			source = lead.get("source_name", "Unknown Source")
 			if source not in grouped_results:
 				grouped_results[source] = []
@@ -169,6 +187,7 @@ class HunterApp(ctk.CTk):
 			header.bind("<Button-1>", lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
 			header_label.bind("<Button-1>",
 			                  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
+		self.log_message(f"[APP]: Triage list updated with {len(staged_leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
 		header_label = header.winfo_children()[0]
@@ -247,7 +266,20 @@ class HunterApp(ctk.CTk):
 		top_pane = ctk.CTkFrame(self.detail_frame, fg_color=DARK_GRAY)
 		top_pane.grid(row=0, column=0, sticky="nsew")
 
-		raw_html = lead_data.get("full_html", "")
+		lead_uuid = lead_data.get("lead_uuid")
+		details_dict = db_manager.get_staged_lead_details(lead_uuid)
+
+		if details_dict:
+			# Prioritize HTML, but fall back to plain text if HTML is missing
+			raw_html = details_dict.get("full_html")
+			if not raw_html:
+				# If no HTML, wrap the plain text in simple paragraph tags
+				plain_text = details_dict.get("full_text", "No content available for this lead.")
+				raw_html = f"<p>{plain_text}</p>"
+		else:
+			# If the database call fails, create a simple error message
+			self.log_message(f"[APP ERROR]: Could not find details for lead {lead_uuid}.")
+			raw_html = "<html><body><h2>Error</h2><p>Could not retrieve lead details from the database.</p></body></html>"
 
 		styled_html = html_sanitizer.sanitize_and_style(raw_html, lead_data.get("title"))
 

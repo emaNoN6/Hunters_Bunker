@@ -59,7 +59,7 @@ def verify_db_version():
 			db_version = result['version'] if result else 0
 		if db_version < latest_script_version:
 			msg = (f"DB schema out of date (DB: v{db_version}, Files: v{latest_script_version}).\n"
-			       f"Run 'python tools/run_migrations.py' to update.")
+				   f"Run 'python tools/run_migrations.py' to update.")
 			return (False, msg)
 		else:
 			return (True, f"DB schema is up to date (v{db_version}).")
@@ -77,7 +77,7 @@ def add_source_domain(domain_data):
 	try:
 		with conn.cursor() as cursor:
 			cursor.execute(sql, (domain_data['domain_name'], domain_data['agent_type'],
-			                     domain_data.get('max_concurrent_requests', 1)))
+								 domain_data.get('max_concurrent_requests', 1)))
 			conn.commit()
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
@@ -112,7 +112,7 @@ def add_source(source_data):
 	try:
 		with conn.cursor() as cursor:
 			cursor.execute(sql, (source_data['source_name'], source_data['target'], domain['id'],
-			                     source_data.get('purpose', 'lead_generation')))
+								 source_data.get('purpose', 'lead_generation')))
 			conn.commit()
 			print(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
 	except Exception as e:
@@ -152,11 +152,11 @@ def log_acquisition(lead_data, source_id):
 	try:
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
 			router_sql = """
-            INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at)
-            VALUES (%s, %s, %s, now())
-            ON CONFLICT (lead_uuid) DO UPDATE SET last_seen_at = now()
-            RETURNING lead_uuid;
-            """
+			INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at)
+			VALUES (%s, %s, %s, now())
+			ON CONFLICT (lead_uuid) DO UPDATE SET last_seen_at = now()
+			RETURNING lead_uuid;
+			"""
 			cursor.execute(router_sql, (lead_uuid, source_id, lead_data.get('url')))
 
 			log_sql = "INSERT INTO acquisition_log (lead_uuid, source_id) VALUES (%s, %s);"
@@ -202,11 +202,11 @@ def add_case(lead_data):
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
 			# Insert into the main cases table
 			case_sql = """
-            INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (url, publication_date) DO NOTHING
-            RETURNING id, publication_date;
-            """
+			INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date, status)
+			VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+			ON CONFLICT (url, publication_date) DO NOTHING
+			RETURNING id, publication_date;
+			"""
 			cursor.execute(case_sql, (
 				lead_uuid,
 				uuid.uuid4(),
@@ -230,11 +230,11 @@ def add_case(lead_data):
 
 			# Insert into the content table
 			content_sql = """
-            INSERT INTO case_content (case_id, lead_uuid, publication_date, full_text, full_html)
-            VALUES (%s, %s, %s, %s, %s);
-            """
+			INSERT INTO case_content (case_id, lead_uuid, publication_date, full_text, full_html)
+			VALUES (%s, %s, %s, %s, %s);
+			"""
 			cursor.execute(content_sql,
-			               (case_id, lead_uuid, pub_date, lead_data.get("text", ""), lead_data.get("html", "")))
+						   (case_id, lead_uuid, pub_date, lead_data.get("text", ""), lead_data.get("html", "")))
 
 			# --- THIS IS THE FIX ---
 			# The 'processed_status' column was removed from acquisition_log.
@@ -270,33 +270,33 @@ def get_random_cases_for_testing(limit=20):
 # Add this function to your hunter/db_manager.py file
 
 def get_triage_cases(limit=100):
-    """
-    Fetches a list of the most recent cases for the GUI triage pane.
-    """
-    sql = """
-        SELECT
-            id,
-            title,
-            source_name,
-            publication_date
-        FROM cases
-        WHERE status = 'TRIAGED' OR status = 'NEW'
-        ORDER BY publication_date DESC
-        LIMIT %s;
-    """
-    conn = get_db_connection()
-    if not conn:
-        return []
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(sql, (limit,))
-            return [dict(row) for row in cursor.fetchall()]
-    except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to get triage cases: {e}")
-        return []
-    finally:
-        if conn:
-            conn.close()
+	"""
+	Fetches a list of the most recent cases for the GUI triage pane.
+	"""
+	sql = """
+		SELECT
+			id,
+			title,
+			source_name,
+			publication_date
+		FROM cases
+		WHERE status = 'TRIAGED' OR status = 'NEW'
+		ORDER BY publication_date DESC
+		LIMIT %s;
+	"""
+	conn = get_db_connection()
+	if not conn:
+		return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (limit,))
+			return [dict(row) for row in cursor.fetchall()]
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to get triage cases: {e}")
+		return []
+	finally:
+		if conn:
+			conn.close()
 
 def get_source_by_name(name):
 	sql = "SELECT * FROM sources WHERE source_name = %s;"
@@ -335,14 +335,14 @@ def update_source_state(source_id, hunt_results):
 			if hunt_results['success']:
 				# If the hunt was successful, reset failures and update success date
 				sql = """
-                    UPDATE sources
-                    SET
-                        last_checked_date = %s,
-                        last_success_date = %s,
-                        consecutive_failures = 0,
-                        last_known_item_id = COALESCE(%s, last_known_item_id)
-                    WHERE id = %s;
-                """
+					UPDATE sources
+					SET
+						last_checked_date = %s,
+						last_success_date = %s,
+						consecutive_failures = 0,
+						last_known_item_id = COALESCE(%s, last_known_item_id)
+					WHERE id = %s;
+				"""
 				cursor.execute(sql, (
 					datetime.now(timezone.utc),
 					datetime.now(timezone.utc),
@@ -352,13 +352,13 @@ def update_source_state(source_id, hunt_results):
 			else:
 				# If the hunt failed, increment the failure count
 				sql = """
-                    UPDATE sources
-                    SET
-                        last_checked_date = %s,
-                        last_failure_date = %s,
-                        consecutive_failures = consecutive_failures + 1
-                    WHERE id = %s;
-                """
+					UPDATE sources
+					SET
+						last_checked_date = %s,
+						last_failure_date = %s,
+						consecutive_failures = consecutive_failures + 1
+					WHERE id = %s;
+				"""
 				cursor.execute(sql, (
 					datetime.now(timezone.utc),
 					datetime.now(timezone.utc),
@@ -398,3 +398,178 @@ def check_acquisition_log(url):
 	except Exception as e:
 		print(f"[DB_MANAGER ERROR]: Failed to check acquisition log for URL {url}: {e}")
 		return False
+
+def add_router_entry(lead_data):
+	"""
+	Creates the initial record for a new lead in the acquisition_router.
+	This is the first step in the filing process.
+
+	Args:
+		lead_data (dict): A Standardized Lead Report.
+
+	Returns:
+		UUID: The newly created lead_uuid, or None on failure.
+	"""
+	# Generate the lead_uuid here, making it the single source of truth.
+	lead_uuid = uuid.uuid4()
+
+	sql = """
+		INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date)
+		VALUES (%s, %s, %s, now(), %s)
+		ON CONFLICT (lead_uuid) DO NOTHING
+		RETURNING lead_uuid;
+	"""
+	conn = get_db_connection()
+	if not conn: return None
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (
+				lead_uuid,
+				lead_data.get('source_id'),
+				lead_data.get('url'),
+				lead_data.get('publication_date')
+			))
+			result = cursor.fetchone()
+			conn.commit()
+			return result[0] if result else None
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to add router entry for '{lead_data.get('title')}': {e}")
+		conn.rollback()
+		return None
+	finally:
+		if conn: conn.close()
+
+
+def add_staging_data(lead_uuid, lead_data):
+	"""
+	Adds the content of a new lead to the case_data_staging table.
+
+	Args:
+		lead_uuid (UUID): The UUID of the lead from the router.
+		lead_data (dict): A Standardized Lead Report.
+
+	Returns:
+		bool: True on success, False on failure.
+	"""
+	sql = """
+		INSERT INTO case_data_staging (uuid, title, full_text, full_html)
+		VALUES (%s, %s, %s, %s);
+	"""
+	conn = get_db_connection()
+	if not conn: return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (
+				lead_uuid,
+				lead_data.get('title'),
+				lead_data.get('text_content'),
+				lead_data.get('html_content')
+			))
+			conn.commit()
+			return True
+	except Exception as e:
+		print(f"[DB_MANAGER ERROR]: Failed to add staging data for lead '{lead_uuid}': {e}")
+		conn.rollback()
+		return False
+	finally:
+		if conn: conn.close()
+
+# Add this function to your hunter/db_manager.py file
+
+def get_active_sources_by_purpose(purpose='lead_generation'):
+    """
+    Fetches all active sources for a specific purpose.
+    This is the primary way the dispatcher gets its mission roster.
+    """
+    sql = """
+        SELECT s.*, sd.agent_type 
+        FROM sources s 
+        JOIN source_domains sd ON s.domain_id = sd.id 
+        WHERE s.is_active = TRUE AND s.purpose = %s;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (purpose,))
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get active sources for purpose '{purpose}': {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def get_staged_leads(limit=100):
+    """
+    Fetches a list of untriaged leads from the staging table for the GUI.
+    """
+    sql = """
+        SELECT
+            cds.id,
+            cds.title,
+            ar.lead_uuid,
+            s.source_name,
+            ar.last_seen_at
+        FROM
+            almanac.case_data_staging cds
+        JOIN
+            almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+        JOIN
+            almanac.sources s ON ar.source_id = s.id
+        ORDER BY
+            ar.last_seen_at DESC
+        LIMIT %s;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get staged leads: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+# Add this function to hunter/db_manager.py
+
+def get_staged_lead_details(lead_uuid):
+    """
+    Fetches the full details for a single untriaged lead from the staging area.
+    """
+    sql = """
+        SELECT
+            cds.title,
+            cds.full_text,
+            cds.full_html,
+            ar.item_url,
+            ar.publication_date,
+            s.source_name
+        FROM
+            almanac.case_data_staging cds
+        JOIN
+            almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+        JOIN
+            almanac.sources s ON ar.source_id = s.id
+        WHERE
+            ar.lead_uuid = %s;
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(sql, (lead_uuid,))
+            details = cursor.fetchone()
+            return dict(details) if details else None
+    except Exception as e:
+        print(f"[DB_MANAGER ERROR]: Failed to get details for lead '{lead_uuid}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
