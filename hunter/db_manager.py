@@ -11,6 +11,9 @@ from datetime import datetime, timezone
 
 from . import config_manager
 
+import logging
+logger = logging.getLogger(__name__)
+
 psycopg2.extras.register_uuid()
 
 # --- Helper Function for Connections ---
@@ -18,14 +21,14 @@ def get_db_connection():
 	try:
 		db_creds = config_manager.get_pgsql_credentials()
 		if not db_creds:
-			print("[DB_MANAGER ERROR]: PostgreSQL credentials not found.")
+			logger.error("[DB_MANAGER ERROR]: PostgreSQL credentials not found.")
 			return None
 		db_creds['options'] = '-c search_path=almanac,public'
 		conn = psycopg2.connect(**db_creds)
 		return conn
 
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL: {e}")
 		return None
 
 
@@ -80,7 +83,7 @@ def add_source_domain(domain_data):
 								 domain_data.get('max_concurrent_requests', 1)))
 			conn.commit()
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
 		conn.rollback()
 	finally:
 		if conn: conn.close()
@@ -95,7 +98,7 @@ def get_source_domain_by_name(domain_name):
 			cursor.execute(sql, (domain_name,))
 			return cursor.fetchone()
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get domain by name: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get domain by name: {e}")
 		return None
 	finally:
 		if conn: conn.close()
@@ -104,7 +107,7 @@ def get_source_domain_by_name(domain_name):
 def add_source(source_data):
 	domain = get_source_domain_by_name(source_data.get('domain_name'))
 	if not domain:
-		print(f"[DB_MANAGER ERROR]: Domain '{source_data.get('domain_name')}' not found.")
+		logger.error(f"[DB_MANAGER ERROR]: Domain '{source_data.get('domain_name')}' not found.")
 		return
 	sql = "INSERT INTO sources (source_name, target, domain_id, purpose) VALUES (%s, %s, %s, %s) ON CONFLICT (source_name) DO NOTHING;"
 	conn = get_db_connection()
@@ -114,9 +117,9 @@ def add_source(source_data):
 			cursor.execute(sql, (source_data['source_name'], source_data['target'], domain['id'],
 								 source_data.get('purpose', 'lead_generation')))
 			conn.commit()
-			print(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
+			logger.info(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
 		conn.rollback()
 	finally:
 		if conn: conn.close()
@@ -131,7 +134,7 @@ def get_active_lead_sources():
 			cursor.execute(sql)
 			return [dict(row) for row in cursor.fetchall()]
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get active sources: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get active sources: {e}")
 		return []
 	finally:
 		if conn: conn.close()
@@ -165,7 +168,7 @@ def log_acquisition(lead_data, source_id):
 			conn.commit()
 			return lead_uuid
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to log acquisition: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to log acquisition: {e}")
 		conn.rollback()
 		return None
 	finally:
@@ -182,7 +185,7 @@ def check_acquisition_router(lead_uuid):
 			cursor.execute(sql, (lead_uuid,))
 			return cursor.fetchone() is not None
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to check acquisition router: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to check acquisition router: {e}")
 		return False
 	finally:
 		if conn: conn.close()
@@ -195,7 +198,7 @@ def add_case(lead_data):
 
 	lead_uuid = lead_data.get('lead_uuid')
 	if not lead_uuid:
-		print("[DB_MANAGER ERROR]: Cannot add case without a lead_uuid.")
+		logger.error("[DB_MANAGER ERROR]: Cannot add case without a lead_uuid.")
 		return None
 
 	try:
@@ -221,7 +224,7 @@ def add_case(lead_data):
 
 			# If ON CONFLICT caused nothing to be inserted, case_result will be None.
 			if not case_result:
-				print(f"[DB_MANAGER]: Case already exists (URL & Date): {lead_data.get('title')}")
+				logger.warning(f"[DB_MANAGER]: Case already exists (URL & Date): {lead_data.get('title')}")
 				conn.rollback()  # Rollback the transaction to be clean
 				return None
 
@@ -242,10 +245,10 @@ def add_case(lead_data):
 			# --- END FIX ---
 
 			conn.commit()
-			print(f"[DB_MANAGER]: Successfully filed new case: {lead_data.get('title')}")
+			logger.info(f"[DB_MANAGER]: Successfully filed new case: {lead_data.get('title')}")
 			return case_id
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: An error occurred adding a case: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: An error occurred adding a case: {e}")
 		if conn: conn.rollback()
 		return None
 	finally:
@@ -262,7 +265,7 @@ def get_random_cases_for_testing(limit=20):
 			cases = cursor.fetchall()
 			return [dict(row) for row in cases]
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get random cases: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get random cases: {e}")
 		return []
 	finally:
 		if conn: conn.close()
@@ -292,7 +295,7 @@ def get_triage_cases(limit=100):
 			cursor.execute(sql, (limit,))
 			return [dict(row) for row in cursor.fetchall()]
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get triage cases: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get triage cases: {e}")
 		return []
 	finally:
 		if conn:
@@ -307,7 +310,7 @@ def get_source_by_name(name):
 			cursor.execute(sql, (name,))
 			return cursor.fetchone()
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get source by name: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get source by name: {e}")
 		return None
 
 
@@ -367,7 +370,7 @@ def update_source_state(source_id, hunt_results):
 
 			conn.commit()
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to update source state for source_id {source_id}: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to update source state for source_id {source_id}: {e}")
 		conn.rollback()
 	finally:
 		if conn:
@@ -383,7 +386,7 @@ def get_all_tasks():
 			cursor.execute(sql)
 			return [dict(row) for row in cursor.fetchall()]
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to get all tasks: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get all tasks: {e}")
 		return []
 
 
@@ -396,29 +399,30 @@ def check_acquisition_log(url):
 			cursor.execute(sql, (url,))
 			return cursor.fetchone() is not None
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to check acquisition log for URL {url}: {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to check acquisition log for URL {url}: {e}")
 		return False
+
+
+# In hunter/db_manager.py
 
 def add_router_entry(lead_data):
 	"""
-	Creates the initial record for a new lead in the acquisition_router.
-	This is the first step in the filing process.
-
-	Args:
-		lead_data (dict): A Standardized Lead Report.
-
-	Returns:
-		UUID: The newly created lead_uuid, or None on failure.
+	Creates or updates a record in the acquisition_router.
+	Uses the item_url for de-duplication.
 	"""
-	# Generate the lead_uuid here, making it the single source of truth.
-	lead_uuid = uuid.uuid4()
+	lead_uuid = uuid.uuid4()  # We still generate a UUID for new entries
 
+	# --- THIS IS THE FIX ---
+	# This new SQL uses ON CONFLICT on the 'item_url' to prevent duplicates.
+	# If the URL exists, it just updates the timestamp.
 	sql = """
-		INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date)
-		VALUES (%s, %s, %s, now(), %s)
-		ON CONFLICT (lead_uuid) DO NOTHING
-		RETURNING lead_uuid;
-	"""
+        INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date)
+        VALUES (%s, %s, %s, now(), %s)
+        ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
+        RETURNING lead_uuid;
+    """
+	# --- END FIX ---
+
 	conn = get_db_connection()
 	if not conn: return None
 	try:
@@ -433,12 +437,11 @@ def add_router_entry(lead_data):
 			conn.commit()
 			return result[0] if result else None
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to add router entry for '{lead_data.get('title')}': {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to add router entry for '{lead_data.get('title')}': {e}")
 		conn.rollback()
 		return None
 	finally:
 		if conn: conn.close()
-
 
 def add_staging_data(lead_uuid, lead_data):
 	"""
@@ -453,7 +456,8 @@ def add_staging_data(lead_uuid, lead_data):
 	"""
 	sql = """
 		INSERT INTO case_data_staging (uuid, title, full_text, full_html)
-		VALUES (%s, %s, %s, %s);
+		VALUES (%s, %s, %s, %s)
+		ON CONFLICT (uuid) DO NOTHING;
 	"""
 	conn = get_db_connection()
 	if not conn: return False
@@ -468,7 +472,7 @@ def add_staging_data(lead_uuid, lead_data):
 			conn.commit()
 			return True
 	except Exception as e:
-		print(f"[DB_MANAGER ERROR]: Failed to add staging data for lead '{lead_uuid}': {e}")
+		logger.error(f"[DB_MANAGER ERROR]: Failed to add staging data for lead '{lead_uuid}': {e}")
 		conn.rollback()
 		return False
 	finally:
@@ -495,7 +499,7 @@ def get_active_sources_by_purpose(purpose='lead_generation'):
             cursor.execute(sql, (purpose,))
             return [dict(row) for row in cursor.fetchall()]
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to get active sources for purpose '{purpose}': {e}")
+        logger.error(f"[DB_MANAGER ERROR]: Failed to get active sources for purpose '{purpose}': {e}")
         return []
     finally:
         if conn:
@@ -504,24 +508,32 @@ def get_active_sources_by_purpose(purpose='lead_generation'):
 def get_staged_leads(limit=100):
     """
     Fetches a list of untriaged leads from the staging table for the GUI.
+    This version includes all the necessary data for promoting a lead to a case.
     """
+    # --- THIS IS THE FIX ---
+    # We now select the item_url and publication_date from the router table.
     sql = """
         SELECT
             cds.id,
             cds.title,
             ar.lead_uuid,
             s.source_name,
-            ar.last_seen_at
+            ar.last_seen_at,
+            ar.item_url AS url,
+            ar.publication_date
         FROM
             almanac.case_data_staging cds
         JOIN
             almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
         JOIN
             almanac.sources s ON ar.source_id = s.id
+        WHERE
+            ar.status = 'NEW' OR ar.status = 'REVIEWING'
         ORDER BY
             ar.last_seen_at DESC
         LIMIT %s;
     """
+    # --- END FIX ---
     conn = get_db_connection()
     if not conn:
         return []
@@ -530,13 +542,11 @@ def get_staged_leads(limit=100):
             cursor.execute(sql, (limit,))
             return [dict(row) for row in cursor.fetchall()]
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to get staged leads: {e}")
+        logger.error("Failed to get staged leads", exc_info=True)
         return []
     finally:
         if conn:
             conn.close()
-
-# Add this function to hunter/db_manager.py
 
 def get_staged_lead_details(lead_uuid):
     """
@@ -568,7 +578,7 @@ def get_staged_lead_details(lead_uuid):
             details = cursor.fetchone()
             return dict(details) if details else None
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to get details for lead '{lead_uuid}': {e}")
+        logger.error(f"[DB_MANAGER ERROR]: Failed to get details for lead '{lead_uuid}': {e}")
         return None
     finally:
         if conn:

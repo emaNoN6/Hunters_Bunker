@@ -25,6 +25,13 @@ from . import db_manager
 from .custom_widgets.tooltip import CTkToolTip
 from .html_parsers import html_sanitizer, link_extractor
 
+from hunter.utils import logger_setup
+
+log_queue = logger_setup.setup_logging()
+
+import logging
+logger = logging.getLogger("Hunter")
+
 # Store the original method
 original_check_if_master_is_canvas = ctk.CTkScrollableFrame.check_if_master_is_canvas
 
@@ -92,8 +99,9 @@ class HunterApp(ctk.CTk):
 		self.build_dossier_viewer()
 
 		self.triage_items = []
-		self.log_queue = queue.Queue()
-		self.after(100, self.process_log_queue)
+		self.log_queue = logger_setup.setup_logging()
+
+		self.after(100, self.process_gui_log_queue)
 		self.after(200, self._run_startup_checks)
 
 	def build_triage_desk(self):
@@ -127,10 +135,12 @@ class HunterApp(ctk.CTk):
 		self.log_textbox.tag_config("ERROR", foreground=ERROR_COLOR)
 		self.log_textbox.tag_config("WARNING", foreground=WARNING_COLOR)
 		self.log_textbox.tag_config("TIMESTAMP", foreground=TIMESTAMP_COLOR)
+		self.log_textbox.tag_config("CALLER", foreground="#80A0C0")  # A nice blue for the module name
+
 		self.log_textbox.configure(state="disabled")
 
 	def start_search_thread(self):
-		self.log_message("[APP]: Hunter dispatch requested...")
+		logger.info("[APP]: Hunter dispatch requested...")
 		self.search_button.configure(state="disabled")
 		threading.Thread(target=self.dispatch_hunt(), daemon=True).start()
 
@@ -140,7 +150,7 @@ class HunterApp(ctk.CTk):
 		This replaces the old 'run_search'.
 		"""
 		self.search_button.configure(state="disabled")
-		self.log_message("[APP]: Dispatcher activated. Hunting for new intel...")
+		logger.info("[APP]: Dispatcher activated. Hunting for new intel...")
 
 		# Run the hunt in a separate thread to keep the GUI responsive
 		hunt_thread = threading.Thread(target=self._hunt_thread_worker)
@@ -149,19 +159,19 @@ class HunterApp(ctk.CTk):
 	def _hunt_thread_worker(self):
 		"""The actual work of the hunt, run in a background thread."""
 		# Call our new, definitive dispatcher
-		dispatcher.run_hunt(self.log_queue)
+		dispatcher.run_hunt()
 
 		# When the hunt is done, safely tell the main GUI thread to refresh the list
 		self.after(0, self.refresh_triage_list)
 		self.after(0, lambda: self.search_button.configure(state="normal"))
-		self.log_message("[APP]: Dispatcher has completed all hunts.")
+		logger.info("[APP]: Dispatcher has completed all hunts.")
 
 	def refresh_triage_list(self):
 		"""
 		Fetches the latest untriaged leads from the database and updates the GUI.
 		This replaces the old 'populate_triage_list'.
 		"""
-		self.log_message("[APP]: Refreshing Triage list from database...")
+		logger.info("[APP]: Refreshing Triage list from database...")
 
 		# 1. Get the fresh intel directly from our new db_manager function
 		staged_leads = db_manager.get_staged_leads()
@@ -187,7 +197,7 @@ class HunterApp(ctk.CTk):
 			header.bind("<Button-1>", lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
 			header_label.bind("<Button-1>",
 			                  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
-		self.log_message(f"[APP]: Triage list updated with {len(staged_leads)} leads.")
+		logger.info(f"[APP]: Triage list updated with {len(staged_leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
 		header_label = header.winfo_children()[0]
@@ -237,12 +247,12 @@ class HunterApp(ctk.CTk):
 		for item in items_to_process:
 			decision = item["decision_var"].get()
 			if decision == "case":
-				self.log_message(f"[TRIAGE SUCCESS]: Filing 'Case': {item['data']['title']}")
+				logger.info(f"[TRIAGE SUCCESS]: Filing 'Case': {item['data']['title']}")
 				db_manager.add_case(item["data"])
 			elif decision == "not_a_case":
-				self.log_message(f"[TRIAGE]: Filing 'Not a Case' for retraining.")
+				logger.info(f"[TRIAGE]: Filing 'Not a Case' for retraining.")
 				self.file_for_retraining(item["data"])
-		self.log_message("[APP]: Triage complete. Refreshing search...")
+		logger.info("[APP]: Triage complete. Refreshing search...")
 		self.start_search_thread()
 
 	def file_for_retraining(self, lead_data):
@@ -254,9 +264,9 @@ class HunterApp(ctk.CTk):
 		try:
 			with open(filepath, "w", encoding="utf-8") as f:
 				f.write(lead_data.get("full_text", ""))
-			self.log_message(f"[SAVE SUCCESS]: Saved retraining file: {os.path.basename(filepath)}")
+			logger.info(f"[SAVE SUCCESS]: Saved retraining file: {os.path.basename(filepath)}")
 		except Exception as e:
-			self.log_message(f"[SAVE ERROR]: Could not save retraining file: {e}")
+			logger.error(f"[SAVE ERROR]: Could not save retraining file: {e}")
 
 	def display_lead_detail(self, lead_data):
 		for widget in self.detail_frame.winfo_children(): widget.destroy()
@@ -278,7 +288,7 @@ class HunterApp(ctk.CTk):
 				raw_html = f"<p>{plain_text}</p>"
 		else:
 			# If the database call fails, create a simple error message
-			self.log_message(f"[APP ERROR]: Could not find details for lead {lead_uuid}.")
+			logger.error(f"[APP ERROR]: Could not find details for lead {lead_uuid}.")
 			raw_html = "<html><body><h2>Error</h2><p>Could not retrieve lead details from the database.</p></body></html>"
 
 		styled_html = html_sanitizer.sanitize_and_style(raw_html, lead_data.get("title"))
@@ -325,58 +335,78 @@ class HunterApp(ctk.CTk):
 				link_label.bind("<Button-1>", click_handler)
 				CTkToolTip(links_frame, message=link["url"])
 
-	def _consume_scroll_event(self, event):
+	@staticmethod
+	def _consume_scroll_event(event):
 		"""A firewall to stop scroll events from propagating and causing errors."""
 		return "break"
 
-	def open_link_in_browser(self, url):
-		self.log_message(f"[APP]: Opening external link: {url}")
+	@staticmethod
+	def open_link_in_browser(url):
+		logger.info(f"[APP]: Opening external link: {url}")
 		try:
 			webbrowser.open_new_tab(url)
 		except Exception as e:
-			self.log_message(f"[APP ERROR]: Could not open link: {e}")
+			logger.error(f"[APP ERROR]: Could not open link: {e}")
 
-	def log_message(self, msg):
-		self.log_queue.put(msg)
-
-	def process_log_queue(self):
+	def process_gui_log_queue(self):
+		"""
+		Checks the log queue and displays messages with color-coded parts.
+		"""
 		try:
 			while True:
 				msg = self.log_queue.get_nowait()
+
 				self.log_textbox.configure(state="normal")
+
+				# Add a timestamp with its own color
 				timestamp = f"{datetime.now().strftime('%H:%M:%S')} - "
 				self.log_textbox.insert("end", timestamp, "TIMESTAMP")
-				tag_match = re.search(r"^(\[.*?])", msg)
-				if tag_match:
-					tag = tag_match.group(1)
-					if "ERROR" in tag or "FATAL" in tag:
-						tag_name = "ERROR"
-					elif "WARNING" in tag:
-						tag_name = "WARNING"
-					elif "SUCCESS" in tag:
-						tag_name = "SUCCESS"
+
+				# --- Advanced Colorization Logic ---
+				# This new regex captures the level, caller, and message separately
+				log_pattern = re.compile(r"^(\[.*?])\s+(\[.*?])\s+(.*)")
+				match = log_pattern.match(msg)
+
+				if match:
+					level_tag, caller_tag, message_text = match.groups()
+
+					# Determine the color for the level tag
+					if "ERROR" in level_tag or "CRITICAL" in level_tag:
+						level_color_tag = "ERROR"
+					elif "WARNING" in level_tag:
+						level_color_tag = "WARNING"
+					elif "SUCCESS" in level_tag:
+						level_color_tag = "SUCCESS"
 					else:
-						tag_name = "INFO"
-					self.log_textbox.insert("end", tag, tag_name)
-					self.log_textbox.insert("end", msg[len(tag):] + "\n")
+						level_color_tag = "INFO"
+
+					# Insert each part with its own tag
+					self.log_textbox.insert("end", f"{level_tag} ", level_color_tag)
+					self.log_textbox.insert("end", f"{caller_tag} ", "CALLER")
+					self.log_textbox.insert("end", f"{message_text}\n", "INFO")  # Use default for the message
 				else:
-					self.log_textbox.insert("end", msg + "\n")
+					# Fallback for messages that don't match the pattern
+					self.log_textbox.insert("end", msg + "\n", "INFO")
+				# --- End Colorization Logic ---
+
 				self.log_textbox.configure(state="disabled")
 				self.log_textbox.see("end")
+
 		except queue.Empty:
 			pass
-		self.after(100, self.process_log_queue)
 
-	def _run_startup_checks(self):
-		self.log_message("[APP]: Running startup system checks...")
+		self.after(100, self.process_gui_log_queue)
+	@staticmethod
+	def _run_startup_checks():
+		logger.info("[APP]: Running startup system checks...")
 		tasks = db_manager.get_all_tasks()
 		if not tasks:
-			self.log_message("[APP WARNING]: No system tasks found in database. Run seeder?")
+			logger.warning("[APP WARNING]: No system tasks found in database. Run seeder?")
 			return
 		pending_tasks = [task['task_name'] for task in tasks if task['status'] == 'PENDING']
 		if pending_tasks:
-			self.log_message(f"[APP INFO]: {len(pending_tasks)} system task(s) are pending.")
+			logger.info(f"[APP INFO]: {len(pending_tasks)} system task(s) are pending.")
 			for task_name in pending_tasks:
-				self.log_message(f"  -> PENDING: {task_name}")
+				logger.info(f"  -> PENDING: {task_name}")
 		else:
-			self.log_message("[APP SUCCESS]: All system tasks are complete.")
+			logger.info("[APP SUCCESS]: All system tasks are complete.")

@@ -5,18 +5,19 @@
 
 import importlib
 from . import db_manager, filing_clerk, config_manager
+import logging
+logger = logging.getLogger("Dispatcher")
 
-
-def run_hunt(log_queue):
+def run_hunt():
 	"""
 	The main dispatcher function. Kicks off a full intel-gathering sweep.
 	This is the function your "Check for New Cases" button will call.
 	"""
-	log_queue.put("[DISPATCHER]: Waking up. Getting mission roster...")
+	logger.info("[DISPATCHER]: Waking up. Getting mission roster...")
 
 	active_sources = db_manager.get_active_sources_by_purpose('lead_generation')
 	if not active_sources:
-		log_queue.put("[DISPATCHER]: No active sources found. Standing down.")
+		logger.info("[DISPATCHER]: No active sources found. Standing down.")
 		return
 
 	# For now, we'll run agents serially. "Dispatcher v2" will handle concurrency.
@@ -24,7 +25,7 @@ def run_hunt(log_queue):
 		source_name = source['source_name']
 		agent_type = source['agent_type']
 
-		log_queue.put(f"[DISPATCHER]: Summoning foreman for '{agent_type}' to hunt source '{source_name}'...")
+		logger.info(f"[DISPATCHER]: Summoning foreman for '{agent_type}' to hunt source '{source_name}'...")
 
 		try:
 			# Dynamically import the correct foreman module
@@ -42,7 +43,7 @@ def run_hunt(log_queue):
 					credentials = {}
 
 			# --- The Hunt ---
-			standardized_reports, newest_id = foreman_module.run_hunt(log_queue, source, credentials)
+			standardized_reports, newest_id = foreman_module.run_hunt(source, credentials)
 
 			# --- After-Action Report ---
 			if standardized_reports is not None:  # A successful hunt (even with 0 leads)
@@ -52,7 +53,7 @@ def run_hunt(log_queue):
 				}
 				# Hand off the clean reports to the Filing Clerk
 				for report in standardized_reports:
-					filing_clerk.file_new_lead(log_queue, report)
+					filing_clerk.file_new_lead(report)
 			else:  # The hunt function returned an error
 				hunt_results = {'success': False}
 
@@ -60,13 +61,13 @@ def run_hunt(log_queue):
 			db_manager.update_source_state(source['id'], hunt_results)
 
 		except ImportError:
-			log_queue.put(f"[DISPATCHER ERROR]: Could not find foreman module for type '{agent_type}'. Skipping.")
+			logger.error(f"[DISPATCHER ERROR]: Could not find foreman module for type '{agent_type}'. Skipping.")
 			db_manager.update_source_state(source['id'], {'success': False})
 			continue
 		except Exception as e:
-			log_queue.put(
+			logger.error(
 				f"[DISPATCHER ERROR]: A critical error occurred while running foreman for '{source_name}': {e}")
 			db_manager.update_source_state(source['id'], {'success': False})
 
-	log_queue.put("[DISPATCHER]: All hunts complete. Standing by.")
+	logger.info("[DISPATCHER]: All hunts complete. Standing by.")
 

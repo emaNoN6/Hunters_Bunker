@@ -7,11 +7,12 @@
 import configparser
 import os
 import sys
+from hunter.utils import path_utils
 
 # --- Configuration ---
 # This uses your robust pathing to find config.ini in the project root.
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(os.path.dirname(SCRIPT_DIR), "config.ini")
+#SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(path_utils.get_project_root(), "config.ini")
 
 # --- The "Single Load" Pattern ---
 _config = configparser.ConfigParser()
@@ -45,6 +46,16 @@ def get_pgsql_admin_credentials():
     else:
         print("[CONFIG_MANAGER WARNING]: [PostgreSQL_Admin] section not found in config.ini")
         return None
+
+def get_logging_config():
+    """
+    Reads the [Logging] section from the config file.
+    """
+    if not _config:
+        _load_config()
+    if 'Logging' in _config:
+        return dict(_config['Logging'])
+    return {}
 
 
 def get_gnews_io_credentials():

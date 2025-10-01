@@ -168,7 +168,8 @@ CREATE TABLE IF NOT EXISTS acquisition_router
     first_seen_at   timestamptz NOT NULL DEFAULT now(),
     last_seen_at    timestamptz NOT NULL DEFAULT now(),
     publication_date  timestamptz,
-    CONSTRAINT fk_router_source FOREIGN KEY (source_id) REFERENCES sources (id) ON DELETE SET NULL
+    CONSTRAINT fk_router_source FOREIGN KEY (source_id) REFERENCES sources (id) ON DELETE SET NULL,
+    CONSTRAINT acquisition_router_item_url_key UNIQUE (item_url)
 );
 
 -- Native partitioned parents with composite PK including partition key

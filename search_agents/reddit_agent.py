@@ -5,9 +5,10 @@
 
 import praw
 import time
+import logging
+logger = logging.getLogger("Reddit Agent")
 
-
-def hunt(log_queue, source, credentials):
+def hunt(source, credentials):
 	"""
 	Hunts a subreddit for new posts and returns the RAW PRAW Submission objects.
 	The Foreman is responsible for translation.
@@ -16,10 +17,10 @@ def hunt(log_queue, source, credentials):
 	last_known_id = source.get('last_known_item_id')
 	source_name = source.get('source_name')
 
-	log_queue.put(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
+	logger.info(f"[{source_name}]: Waking up. Patrolling r/{subreddit_name}...")
 
 	if not credentials:
-		log_queue.put(f"[{source_name} ERROR]: Reddit API credentials not provided.")
+		logger.error(f"[{source_name} ERROR]: Reddit API credentials not provided.")
 		return [], None
 
 	raw_submissions = []
@@ -39,7 +40,7 @@ def hunt(log_queue, source, credentials):
 			reset_timestamp = reddit.auth.limits.get('reset_timestamp')
 			if reset_timestamp:
 				reset_seconds = reset_timestamp - time.time()
-				log_queue.put(
+				logger.warning(
 					f"[{source_name}]: Rate Limit Status: {remaining} requests remaining. Reset in {int(reset_seconds)} seconds.")
 		# --- End Rate Limit Check ---
 
@@ -50,7 +51,7 @@ def hunt(log_queue, source, credentials):
 				newest_id_found = submission.id
 
 			if submission.id == last_known_id:
-				log_queue.put(f"[{source_name}]: Found bookmark ({last_known_id}). Concluding hunt.")
+				logger.info(f"[{source_name}]: Found bookmark ({last_known_id}). Concluding hunt.")
 				break
 
 			if submission.stickied or not submission.is_self:
@@ -65,10 +66,10 @@ def hunt(log_queue, source, credentials):
 		# Reverse the list to process oldest-first
 		raw_submissions.reverse()
 
-		log_queue.put(f"[{source_name}]: Hunt successful. Returned {len(raw_submissions)} raw submissions.")
+		logger.info(f"[{source_name}]: Hunt successful. Returned {len(raw_submissions)} raw submissions.")
 
 		return raw_submissions, newest_id_found
 
 	except Exception as e:
-		log_queue.put(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
+		logger.error(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
 		return [], None

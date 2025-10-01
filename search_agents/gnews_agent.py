@@ -18,9 +18,10 @@
 
 from gnews import GNews
 from hunter import db_manager
+import logging
+logger = logging.getLogger("Gnews Agent")
 
-
-def hunt(log_queue, source):
+def hunt(source):
     """
     Searches for news articles using the GNews library based on keywords.
     """
@@ -28,14 +29,14 @@ def hunt(log_queue, source):
     source_id = source.get("id")
     source_name = source.get("source_name")
 
-    log_queue.put(f"[{source_name}]: Waking up. Searching for '{keyword}'...")
+    logger.info(f"[{source_name}]: Waking up. Searching for '{keyword}'...")
 
     results = []
     try:
         google_news = GNews(language="en", country="US", period="7d")
         news = google_news.get_news(keyword)
 
-        log_queue.put(f"[{source_name}]: Found {len(news)} potential leads.")
+        logger.info(f"[{source_name}]: Found {len(news)} potential leads.")
 
         for item in news:
             # Check if we've already processed this article
@@ -58,6 +59,6 @@ def hunt(log_queue, source):
         return results
 
     except Exception as e:
-        log_queue.put(f"[{source_name} ERROR]: {e}")
+        logger.error(f"[{source_name} ERROR]: {e}")
         # Here we would update the source's failure count in a real scenario
         return []

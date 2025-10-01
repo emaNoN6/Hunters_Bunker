@@ -19,20 +19,22 @@ import psycopg2
 import psycopg2.extras
 from hunter import config_manager
 from hunter import db_manager
+import logging
+logger = logging.getLogger(__name__)
 
 # --- Helper Function for Connections ---
 def get_db_connection():
     try:
         db_creds = config_manager.get_pgsql_admin_credentials()
         if not db_creds:
-            print("[DB_MANAGER ERROR]: PostgreSQL credentials not found.")
+            logger.error("[DB_MANAGER ERROR]: PostgreSQL credentials not found.")
             return None
 
         db_creds['options'] = '-c search_path=almanac,public'
         conn = psycopg2.connect(**db_creds)
         return conn
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL: {e}")
+        logger.error(f"[DB_MANAGER ERROR]: Could not connect to PostgreSQL: {e}")
         return None
 
 # --- Source Management ---
@@ -46,7 +48,7 @@ def add_source_domain(domain_data):
                                  domain_data.get('max_concurrent_requests', 1)))
             conn.commit()
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
+        logger.error(f"[DB_MANAGER ERROR]: Failed to add source domain: {e}")
         conn.rollback()
     finally:
         if conn: conn.close()
@@ -54,7 +56,7 @@ def add_source_domain(domain_data):
 def add_source(source_data):
     domain = db_manager.get_source_domain_by_name(source_data.get('domain_name'))
     if not domain:
-        print(f"[DB_MANAGER ERROR]: Domain '{source_data.get('domain_name')}' not found.")
+        logger.error(f"[DB_MANAGER ERROR]: Domain '{source_data.get('domain_name')}' not found.")
         return
     sql = "INSERT INTO sources (source_name, target, domain_id, purpose) VALUES (%s, %s, %s, %s) ON CONFLICT (source_name) DO NOTHING;"
     conn = get_db_connection()
@@ -64,9 +66,9 @@ def add_source(source_data):
             cursor.execute(sql, (source_data['source_name'], source_data['target'], domain['id'],
                                  source_data.get('purpose', 'lead_generation')))
             conn.commit()
-            print(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
+            logger.info(f"[DB_MANAGER]: Added/updated source '{source_data['source_name']}'.")
     except Exception as e:
-        print(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
+        logger.error(f"[DB_MANAGER ERROR]: Failed to add source: {e}")
         conn.rollback()
     finally:
         if conn: conn.close()
@@ -87,9 +89,9 @@ def add_keywords(keyword_data):
                 cursor, sql, keyword_data, template=None, page_size=100
             )
             conn.commit()
-            print(f"[DB_ADMIN]: Successfully added/updated {len(keyword_data)} keywords.")
+            logger.info(f"[DB_ADMIN]: Successfully added/updated {len(keyword_data)} keywords.")
     except Exception as e:
-        print(f"[DB_ADMIN ERROR]: Failed to add keywords: {e}")
+        logger.error(f"[DB_ADMIN ERROR]: Failed to add keywords: {e}")
         conn.rollback()
     finally:
         if conn:

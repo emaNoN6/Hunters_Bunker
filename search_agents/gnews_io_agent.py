@@ -5,9 +5,10 @@
 
 import requests
 from datetime import datetime, timezone, timedelta
+import logging
+logger = logging.getLogger("GnewsIO Agent")
 
-
-def hunt(log_queue, source, credentials):
+def hunt(source, credentials):
 	"""
 	Hunts GNews.io for new articles since the last check.
 	"""
@@ -15,10 +16,10 @@ def hunt(log_queue, source, credentials):
 	last_checked = source.get('last_checked_date')
 	source_name = source.get('source_name')
 
-	log_queue.put(f"[{source_name}]: Waking up. Hunting for '{query}'...")
+	logger.info(f"[{source_name}]: Waking up. Hunting for '{query}'...")
 
 	if not credentials or not credentials.get('api_key'):
-		log_queue.put(f"[{source_name} ERROR]: GNews.io API key not provided.")
+		logger.error(f"[{source_name} ERROR]: GNews.io API key not provided.")
 		return [], None
 
 	# --- Prepare the API Request ---
@@ -36,7 +37,7 @@ def hunt(log_queue, source, credentials):
 	if last_checked:
 		start_time = last_checked - timedelta(hours=1)
 		params['from'] = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
-		log_queue.put(f"[{source_name}]: Searching for articles published after {params['from']}")
+		logger.info(f"[{source_name}]: Searching for articles published after {params['from']}")
 
 	# --- Execute the Hunt ---
 	leads = []
@@ -60,9 +61,9 @@ def hunt(log_queue, source, credentials):
 			leads.append(lead_data)
 
 		# News APIs don't use bookmarks, so we return None for the newest_id
-		log_queue.put(f"[{source_name}]: Hunt successful. Returned {len(leads)} new leads.")
+		logger.info(f"[{source_name}]: Hunt successful. Returned {len(leads)} new leads.")
 		return leads, None
 
 	except Exception as e:
-		log_queue.put(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
+		logger.error(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
 		return [], None

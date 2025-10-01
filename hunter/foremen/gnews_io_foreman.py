@@ -5,18 +5,19 @@
 
 from datetime import datetime, timezone
 from search_agents import gnews_io_agent
+import logging
+logger = logging.getLogger(__name__)
 
-
-def run_hunt(log_queue, source, credentials):
+def run_hunt(source, credentials):
 	"""
 	Manages a hunt on a GNews.io source. It deploys an agent, receives the
 	raw intel, and translates it into Standardized Lead Reports.
 	"""
 	try:
 		# 1. Deploy the agent to get the raw intel
-		raw_articles, newest_id_found = gnews_io_agent.hunt(log_queue, source, credentials)
+		raw_articles, newest_id_found = gnews_io_agent.hunt(source, credentials)
 	except Exception as e:
-		log_queue.put(f"[GNEWS_FOREMAN ERROR]: The hunt conducted by the agent failed critically: {e}")
+		logger.error(f"[GNEWS_FOREMAN ERROR]: The hunt conducted by the agent failed critically: {e}")
 		return None, None
 
 	if raw_articles is None:
@@ -55,5 +56,5 @@ def _translate_article(raw_article, source_id, source_name):
 		}
 		return standardized_report
 	except Exception as e:
-		print(f"[GNEWS_FOREMAN ERROR]: Failed to translate article '{raw_article.get('title', 'N/A')}': {e}")
+		logger.error(f"[GNEWS_FOREMAN ERROR]: Failed to translate article '{raw_article.get('title', 'N/A')}': {e}")
 		return None

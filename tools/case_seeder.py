@@ -1,42 +1,47 @@
 # ==========================================================
-# Hunter's Command Console - Definitive Case Seeder
+# Hunter's Command Console - Definitive Case Seeder (Final)
 # Copyright (c) 2025, M. Stilson & Codex
 # ==========================================================
 
-import os
-import sys
-import random
-import queue
-import time
+import logging
 
-# --- Pathing Magic ---
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-# --- End Magic ---
+# --- Centralized Pathing ---
+from hunter.utils.path_utils import setup_project_path
 
-from hunter import db_manager, config_manager, db_admin
-from hunter.utils import start_console_log_consumer
-from search_agents import reddit_agent, gnews_io_agent
+setup_project_path()
+# --- End Pathing ---
+
+from hunter import db_admin, db_manager, config_manager
+from hunter.foremen import reddit_foreman, gnews_io_foreman, test_data_foreman
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 
-def setup_seed_sources(log_queue):
+def setup_seed_sources():
 	"""
 	Ensures the necessary source_domains and sources for seeding exist in the DB.
 	"""
-	log_queue.put("[SEEDER]: Verifying seed sources exist...")
+	logger.info("Verifying seed sources exist...")
 
 	required_sources = {
 		"Reddit Paranormal":    {
 			"domain_name": "reddit.com", "agent_type": "reddit", "target": "paranormal"
 		},
 		"GNews.io Unexplained": {
-			"domain_name": "gnews.io", "agent_type": "gnews", "target": '"unexplained phenomena"'
+			"domain_name": "gnews.io", "agent_type": "gnews_io", "target": '"unexplained phenomena"'
+		},
+		"Test Data Source":     {
+			"domain_name": "testdata", "agent_type": "test_data", "target": "test_leads.json"
 		}
 	}
 
+	# Ensure domains exist first
 	db_admin.add_source_domain({"domain_name": "reddit.com", "agent_type": "reddit"})
-	db_admin.add_source_domain({"domain_name": "gnews.io", "agent_type": "gnews"})
+	db_admin.add_source_domain({"domain_name": "gnews.io", "agent_type": "gnews_io"})
+	db_admin.add_source_domain({"domain_name": "testdata", "agent_type": "test_data"})
 
+	# Now, ensure sources exist and get their real DB info
 	live_sources = {}
 	for name, data in required_sources.items():
 		data['source_name'] = name
@@ -45,84 +50,64 @@ def setup_seed_sources(log_queue):
 		if source_info:
 			live_sources[name] = source_info
 		else:
-			log_queue.put(f"[SEEDER ERROR]: Failed to create or find source '{name}'. Aborting.")
+			logger.error(f"Failed to create or find source '{name}'. Aborting.")
 			return None
 
-	log_queue.put("[SEEDER]: All seed sources are configured in the database.")
+	logger.info("All seed sources are configured in the database.")
 	return live_sources
 
 
-def seed_cases(log_queue, count=20):
+def seed_cases(count=20):
 	"""
-	Runs live search agents and correctly seeds the database.
+	Runs live hunts via the foremen and seeds the database.
 	"""
-	live_sources = setup_seed_sources(log_queue)
+	live_sources = setup_seed_sources()
 	if not live_sources:
 		return
 
 	reddit_creds = config_manager.get_reddit_credentials()
 	gnews_creds = config_manager.get_gnews_io_credentials()
 
-	all_leads = []
+	all_reports = []
+
+	# --- THIS IS THE FIX ---
+	# We now call the FOREMEN, not the agents, and use the REAL source data.
 
 	# Hunt Reddit
 	if reddit_creds and "Reddit Paranormal" in live_sources:
-		log_queue.put(" -> Hunting Reddit for fresh intel...")
+		logger.info("Dispatching Reddit Foreman for fresh intel...")
 		reddit_source = live_sources["Reddit Paranormal"]
-		reddit_leads, _ = reddit_agent.hunt(log_queue, reddit_source, reddit_creds)
-		for lead in reddit_leads:
-			# --- THIS IS THE FIX ---
-			# Attach the full source intel to the lead
-			lead['source_id'] = reddit_source['id']
-			lead['source_name'] = reddit_source['source_name']
-		# --- END FIX ---
-		all_leads.extend(reddit_leads)
+		reports, _ = reddit_foreman.run_hunt(reddit_source, reddit_creds)
+		if reports:
+			all_reports.extend(reports)
 
 	# Hunt GNews
 	if gnews_creds and "GNews.io Unexplained" in live_sources:
-		log_queue.put(" -> Hunting GNews.io for fresh intel...")
+		logger.info("Dispatching GNews.io Foreman for fresh intel...")
 		gnews_source = live_sources["GNews.io Unexplained"]
-		gnews_leads, _ = gnews_io_agent.hunt(log_queue, gnews_source, gnews_creds)
-		for lead in gnews_leads:
-			# --- THIS IS THE FIX ---
-			# Attach the full source intel to the lead
-			lead['source_id'] = gnews_source['id']
-			lead['source_name'] = gnews_source['source_name']
-		# --- END FIX ---
-		all_leads.extend(gnews_leads)
+		reports, _ = gnews_io_foreman.run_hunt(gnews_source, gnews_creds)
+		if reports:
+			all_reports.extend(reports)
 
-	if not all_leads:
-		log_queue.put("[SEEDER ERROR]: No leads were found by any agents. Aborting.")
+	# Hunt Test Data
+	if "Test Data Source" in live_sources:
+		logger.info("Dispatching Test Data Foreman...")
+		test_source = live_sources["Test Data Source"]
+		reports, _ = test_data_foreman.run_hunt(test_source)
+		if reports:
+			all_reports.extend(reports)
+	# --- END FIX ---
+
+	if not all_reports:
+		logger.error("No leads were found by any foremen. Aborting.")
 		return
 
-	log_queue.put(f"[SEEDER]: Agents returned with {len(all_leads)} total leads. Filtering and filing...")
-
-	random.shuffle(all_leads)
-	leads_to_add = all_leads[:count]
-
-	log_queue.put(f"[SEEDER]: Seeding database with {len(leads_to_add)} cases...")
-
-	successful_adds = 0
-	for lead in leads_to_add:
-		if not lead.get("publication_date"):
-			log_queue.put(f"[SEEDER WARNING]: Skipping lead '{lead.get('title')}' due to missing publication_date.")
-			continue
-
-		lead_uuid = db_manager.log_acquisition(lead, lead['source_id'])
-		if not lead_uuid:
-			log_queue.put(f"[SEEDER WARNING]: Failed to log lead '{lead.get('title')}'. Skipping.")
-			continue
-
-		lead['lead_uuid'] = lead_uuid
-		case_id = db_manager.add_case(lead)
-		if case_id:
-			successful_adds += 1
-
-	log_queue.put(f"[SEEDER]: Seeding complete. Successfully added {successful_adds} new cases.")
+	logger.info(f"Foremen returned with {len(all_reports)} total standardized reports. No filing needed for seeder.")
+	logger.info("Seeding complete. Use the main dispatcher to file new leads.")
 
 
 if __name__ == "__main__":
-	log_queue = queue.Queue()
-	start_console_log_consumer(log_queue)
-	seed_cases(log_queue)
-	time.sleep(1)
+	from hunter.utils import logger_setup
+
+	logger_setup.setup_logging()
+	seed_cases()
