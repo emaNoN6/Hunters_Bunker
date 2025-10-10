@@ -31,15 +31,23 @@ log_queue = logger_setup.setup_logging()
 
 import logging
 logger = logging.getLogger("Hunter")
+LOG_PATTERN = re.compile(r"^(\[.*?])\s+(\[.*?])\s+(.*)")
+LEVEL_TAGS = {
+	"ERROR":    "ERROR",
+	"CRITICAL": "ERROR",
+	"WARNING":  "WARNING",
+	"SUCCESS":  "SUCCESS",
+}
+
 
 # Store the original method
 original_check_if_master_is_canvas = ctk.CTkScrollableFrame.check_if_master_is_canvas
 
 def patched_check_if_master_is_canvas(self, widget):
-    # If widget is a string, return False to avoid the error
-    if isinstance(widget, str):
-        return False
-    return original_check_if_master_is_canvas(self, widget)
+	# If widget is a string, return False to avoid the error
+	if isinstance(widget, str):
+		return False
+	return original_check_if_master_is_canvas(self, widget)
 
 # Apply the patch
 ctk.CTkScrollableFrame.check_if_master_is_canvas = patched_check_if_master_is_canvas
@@ -78,7 +86,7 @@ class HunterApp(ctk.CTk):
 		# --- Database Connection Check ---
 		if not db_manager.check_database_connection():
 			error_label = ctk.CTkLabel(self, text="FATAL ERROR: Could not connect to PostgreSQL database.",
-			                           font=self.bold_font, text_color="red")
+									   font=self.bold_font, text_color="red")
 			error_label.pack(expand=True)
 			return
 
@@ -114,10 +122,10 @@ class HunterApp(ctk.CTk):
 		self.bottom_frame.grid_columnconfigure(0, weight=1)
 		self.bottom_frame.grid_columnconfigure(1, weight=1)
 		self.search_button = ctk.CTkButton(self.bottom_frame, text="Search for New Cases",
-		                                   command=self.start_search_thread, font=self.button_font)
+										   command=self.start_search_thread, font=self.button_font)
 		self.search_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 		self.confirm_button = ctk.CTkButton(self.bottom_frame, text="Confirm & File Selected",
-		                                    command=self.confirm_triage_action, font=self.button_font)
+											command=self.confirm_triage_action, font=self.button_font)
 		self.confirm_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
 	def build_dossier_viewer(self):
@@ -128,7 +136,7 @@ class HunterApp(ctk.CTk):
 		self.detail_frame = self.tab_view.tab("Dossier")
 		self.log_frame = self.tab_view.tab("Operations Log")
 		self.log_textbox = ctk.CTkTextbox(self.log_frame, font=self.main_font, wrap="word", fg_color=DARK_BG,
-		                                  text_color=TEXT_COLOR)
+										  text_color=TEXT_COLOR)
 		self.log_textbox.pack(expand=True, fill="both")
 		self.log_textbox.tag_config("INFO", foreground=ACCENT_COLOR)
 		self.log_textbox.tag_config("SUCCESS", foreground=SUCCESS_COLOR)
@@ -196,7 +204,7 @@ class HunterApp(ctk.CTk):
 			header._is_expanded = False
 			header.bind("<Button-1>", lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
 			header_label.bind("<Button-1>",
-			                  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
+							  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
 		logger.info(f"[APP]: Triage list updated with {len(staged_leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
@@ -228,18 +236,18 @@ class HunterApp(ctk.CTk):
 			item_frame.pack(fill="x", pady=2, padx=10)
 			decision_var = ctk.StringVar(value="none")
 			ctk.CTkRadioButton(item_frame, text="", variable=decision_var, corner_radius=corner_radius, width=16,
-			                   height=16, border_color=case_border, fg_color=case_fg, hover_color=case_hover,
-			                   value="case").pack(side="left", padx=1)
+							   height=16, border_color=case_border, fg_color=case_fg, hover_color=case_hover,
+							   value="case").pack(side="left", padx=1)
 			ctk.CTkRadioButton(item_frame, text="", variable=decision_var, corner_radius=corner_radius, width=16,
-			                   height=16, border_color=not_case_border, hover_color=not_case_hover,
-			                   fg_color=not_case_fg, value="not_a_case").pack(side="left", padx=1)
+							   height=16, border_color=not_case_border, hover_color=not_case_hover,
+							   fg_color=not_case_fg, value="not_a_case").pack(side="left", padx=1)
 			subject_label = ctk.CTkLabel(item_frame,
-			                             text=textwrap.shorten(lead_data["title"], width=50, placeholder="..."),
-			                             anchor="w", cursor="hand2", font=self.main_font, text_color=TEXT_COLOR)
+										 text=textwrap.shorten(lead_data["title"], width=50, placeholder="..."),
+										 anchor="w", cursor="hand2", font=self.main_font, text_color=TEXT_COLOR)
 			subject_label.pack(side="left", padx=10, expand=True, fill="x")
 			subject_label.bind("<Button-1>", lambda e, data=lead_data: self.display_lead_detail(data))
 			CTkToolTip(subject_label, message=lead_data["title"], delay=0.25, follow=True, x_offset=tooltip_x,
-			           y_offset=tooltip_y)
+					   y_offset=tooltip_y)
 			self.triage_items.append({"frame": item_frame, "data": lead_data, "decision_var": decision_var})
 
 	def confirm_triage_action(self):
@@ -295,7 +303,7 @@ class HunterApp(ctk.CTk):
 
 		if styled_html:
 			html_viewer = tkinterweb.HtmlFrame(top_pane, messages_enabled=False,
-			                                   on_link_click=self.open_link_in_browser)
+											   on_link_click=self.open_link_in_browser)
 			html_viewer.load_html(styled_html)
 			html_viewer.pack(fill="both", expand=True)
 
@@ -307,7 +315,7 @@ class HunterApp(ctk.CTk):
 			html_viewer.html.bind("<Button-5>", self._consume_scroll_event)  # For Linux
 		else:
 			text_box = ctk.CTkTextbox(top_pane, font=self.main_font, wrap="word", text_color=TEXT_COLOR,
-			                          fg_color=DARK_GRAY)
+									  fg_color=DARK_GRAY)
 			text_box.pack(expand=True, fill="both")
 			text_box.insert("0.0", lead_data.get("full_text", "No content available."))
 			text_box.configure(state="disabled")
@@ -316,8 +324,8 @@ class HunterApp(ctk.CTk):
 		bottom_pane.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
 		bottom_pane.grid_columnconfigure(0, weight=1)
 		ctk.CTkLabel(bottom_pane, text="Extracted Links", font=self.bold_font, text_color=TEXT_COLOR).pack(anchor="w",
-		                                                                                                   padx=10,
-		                                                                                                   pady=5)
+																										   padx=10,
+																										   pady=5)
 		links_frame = ctk.CTkScrollableFrame(bottom_pane, fg_color="transparent")
 		links_frame.pack(fill="both", expand=True, padx=5, pady=5)
 		extracted_links = link_extractor.find_links(raw_html)
@@ -327,7 +335,7 @@ class HunterApp(ctk.CTk):
 			for link in extracted_links:
 				link_text = f"🔗 {link['text']}"
 				link_label = ctk.CTkLabel(links_frame, text=link_text, anchor="w", cursor="hand2", font=self.main_font,
-				                          text_color=ACCENT_COLOR)
+										  text_color=ACCENT_COLOR)
 				link_label.pack(fill="x", padx=5, pady=2)
 				# Instead of a lambda, we use functools.partial to create a clean,
 				# stable callback function that correctly captures the URL.
@@ -348,54 +356,52 @@ class HunterApp(ctk.CTk):
 		except Exception as e:
 			logger.error(f"[APP ERROR]: Could not open link: {e}")
 
+	def _is_scrolled_to_bottom(self, textbox):
+		return float(textbox.yview()[0]) >= 0.999
+
 	def process_gui_log_queue(self):
-		"""
-		Checks the log queue and displays messages with color-coded parts.
-		"""
+		processed_any = False
 		try:
+			# Check scroll state before inserting
+			y0, y1 = self.log_textbox.yview()
+			# If not scrollable yet (y1 == 1.0), or already at bottom, we should follow
+			at_bottom = (y1 == 1.0) or (y1 >= 0.999)
+
+			self.log_textbox.configure(state="normal")
+
 			while True:
 				msg = self.log_queue.get_nowait()
+				processed_any = True
 
-				self.log_textbox.configure(state="normal")
-
-				# Add a timestamp with its own color
 				timestamp = f"{datetime.now().strftime('%H:%M:%S')} - "
 				self.log_textbox.insert("end", timestamp, "TIMESTAMP")
 
-				# --- Advanced Colorization Logic ---
-				# This new regex captures the level, caller, and message separately
-				log_pattern = re.compile(r"^(\[.*?])\s+(\[.*?])\s+(.*)")
-				match = log_pattern.match(msg)
-
+				match = LOG_PATTERN.match(msg)
 				if match:
 					level_tag, caller_tag, message_text = match.groups()
-
-					# Determine the color for the level tag
-					if "ERROR" in level_tag or "CRITICAL" in level_tag:
-						level_color_tag = "ERROR"
-					elif "WARNING" in level_tag:
-						level_color_tag = "WARNING"
-					elif "SUCCESS" in level_tag:
-						level_color_tag = "SUCCESS"
-					else:
-						level_color_tag = "INFO"
-
-					# Insert each part with its own tag
+					level_color_tag = next(
+							(LEVEL_TAGS[key] for key in LEVEL_TAGS if key in level_tag),
+							"INFO"
+					)
 					self.log_textbox.insert("end", f"{level_tag} ", level_color_tag)
 					self.log_textbox.insert("end", f"{caller_tag} ", "CALLER")
-					self.log_textbox.insert("end", f"{message_text}\n", "INFO")  # Use default for the message
+					self.log_textbox.insert("end", f"{message_text}\n", "INFO")
 				else:
-					# Fallback for messages that don't match the pattern
-					self.log_textbox.insert("end", msg + "\n", "INFO")
-				# --- End Colorization Logic ---
-
-				self.log_textbox.configure(state="disabled")
-				self.log_textbox.see("end")
+					self.log_textbox.insert("end", f"{msg}\n", "INFO")
 
 		except queue.Empty:
 			pass
+		finally:
+			self.log_textbox.configure(state="disabled")
 
-		self.after(100, self.process_gui_log_queue)
+			# Only scroll if we were at bottom OR not scrollable yet
+			if at_bottom:
+				self.log_textbox.see("end")
+
+		if processed_any:
+			self.after_idle(self.process_gui_log_queue)
+		else:
+			self.after(100, self.process_gui_log_queue)
 	@staticmethod
 	def _run_startup_checks():
 		logger.info("[APP]: Running startup system checks...")

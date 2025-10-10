@@ -12,6 +12,10 @@
       <excludeFolder url="file://$MODULE_DIR$/data/texts" />
       <excludeFolder url="file://$MODULE_DIR$/data/training_data" />
       <excludeFolder url="file://$MODULE_DIR$/db_backups" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea" />
+      <excludeFolder url="file://$MODULE_DIR$/.junie" />
+      <excludeFolder url="file://$MODULE_DIR$/.vscode" />
+      <excludeFolder url="file://$MODULE_DIR$/.github" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (Hunters_Bunker)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

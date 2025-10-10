@@ -16,3 +16,8 @@ hunter_model.joblib
 *.log
 *.db
 /config.ini
+/.gemini/
+*.ipynb
+/.github/
+/.junie/
+/toolbox.exe
