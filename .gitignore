@@ -21,3 +21,5 @@ hunter_model.joblib
 /.github/
 /.junie/
 /toolbox.exe
+/.vscode/
+/tools/paranormal_terms.txt

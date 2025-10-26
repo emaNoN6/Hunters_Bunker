@@ -1,42 +1,66 @@
 # ==========================================================
-# Hunter's Command Console - Definitive Filing Clerk
+# Hunter's Command Console - Filing Clerk (v2 - Dataclass Compliant)
 # Copyright (c) 2025, M. Stilson & Codex
 # ==========================================================
 
-from . import db_manager
 import logging
+from hunter.models import LeadData
+
 logger = logging.getLogger("Filing Clerk")
 
-def file_new_lead(standardized_report):
-    """
-    Performs the full, multistep ritual for filing a new lead.
-    This is the single point of entry for new data into the system.
 
-    Args:
-        standardized_report (dict): A clean, standardized report from a Foreman.
+class FilingClerk:
+	"""
+	The master librarian for the evidence locker.
+	Its sole responsibility is to take standardized LeadData objects from
+	the dispatcher and correctly file them in the database using the db_manager.
+	It is the final checkpoint in the data acquisition pipeline.
+	"""
 
-    Returns:
-        bool: True if filing was successful, False otherwise.
-    """
-    title = standardized_report.get('title', 'Untitled Lead')
-    logger.info(f"[FILING_CLERK]: Receiving new lead for filing: '{title}'")
+	def __init__(self, db_manager):
+		self.db_manager = db_manager
+		logger.info("Filing Clerk is on duty.")
 
-    # --- Step 1: Create the entry in the acquisition_router ---
-    # This is the "front desk" logbook. It must be created first.
-    lead_uuid = db_manager.add_router_entry(standardized_report)
+	def file_leads(self, leads: list[LeadData]):
+		"""
+		Processes a list of LeadData objects and files them in the database.
+		This is the primary entry point for the Filing Clerk.
+		"""
+		if not leads:
+			return
 
-    if not lead_uuid:
-        logger.error(f"[FILING_CLERK ERROR]: Failed to create router entry for '{title}'. Aborting file.")
-        return False
+		# TODO: Implement a pre-flight duplicate check against the database
+		# by sending all lead.url values to a new db_manager function.
+		# This will prevent wasting time trying to insert duplicates.
 
-    # --- Step 2: File the content in the staging area ---
-    # This is the "evidence locker" for untriaged content.
-    success = db_manager.add_staging_data(lead_uuid, standardized_report)
+		filed_count = 0
+		for lead in leads:
+			try:
+				# The Filing Clerk unpacks the pristine LeadData object and
+				# passes its contents to the db_manager for storage.
+				# This now includes the 'metadata' field.
+				lead_uuid = self.db_manager.add_acquisition(
+						source_name=lead.source_name,
+						url=lead.url,
+						title=lead.title,
+						publication_date=lead.publication_date,
+						text_content=lead.text,
+						html_content=lead.html,
+						image_url=lead.image_url,
+						metadata=lead.metadata  # Pass the metadata dictionary
+				)
 
-    if not success:
-        logger.error(f"[FILING_CLERK ERROR]: Failed to file staging data for lead '{lead_uuid}'.")
-        # In a future version, we might want to roll back the router entry here.
-        return False
+				if lead_uuid:
+					# A good practice is to update the object with its new ID
+					# in case it's needed immediately by another process.
+					lead.lead_uuid = lead_uuid
+					logger.info(f"Filed new lead {lead.lead_uuid}: {lead.title}")
+					filed_count += 1
+				else:
+					logger.warning(f"Failed to file lead (db_manager returned None): {lead.title}")
 
-    logger.info(f"[FILING_CLERK]: Successfully filed new lead '{title}' with UUID: {lead_uuid}")
-    return True
+			except Exception as e:
+				# This could be a database error or another unexpected issue.
+				logger.error(f"An unexpected error occurred while filing lead '{lead.title}': {e}", exc_info=True)
+
+		logger.info(f"Filing run complete. Successfully filed {filed_count}/{len(leads)} leads.")

@@ -19,18 +19,20 @@ from functools import partial
 from hunter import dispatcher
 
 # --- Our Custom Tools ---
-# These imports are now correct for our final package structure.
-from . import config_manager
-from . import db_manager
-from .custom_widgets.tooltip import CTkToolTip
-from .html_parsers import html_sanitizer, link_extractor
-
+from hunter import config_manager
+from hunter import db_manager
+from hunter.custom_widgets.tooltip import CTkToolTip
+from hunter.html_parsers import html_sanitizer, link_extractor
 from hunter.utils import logger_setup
+# --- SURGICAL CHANGE: Import new Dispatcher class and data contracts ---
+from hunter.dispatcher import Dispatcher
+from hunter.models import LeadData
 
 log_queue = logger_setup.setup_logging()
 
 import logging
-logger = logging.getLogger("Hunter")
+
+logger = logging.getLogger("HunterApp")
 LOG_PATTERN = re.compile(r"^(\[.*?])\s+(\[.*?])\s+(.*)")
 LEVEL_TAGS = {
 	"ERROR":    "ERROR",
@@ -69,6 +71,10 @@ TIMESTAMP_COLOR = GUI_CONFIG.get("timestamp_color", "gray70")
 LINK_VISITED_COLOR = GUI_CONFIG.get("link_visited_color", "#B2A2D4")
 
 
+def _is_scrolled_to_bottom(textbox):
+	return float(textbox.yview()[0]) >= 0.999
+
+
 class HunterApp(ctk.CTk):
 	def __init__(self):
 		super().__init__()
@@ -89,6 +95,16 @@ class HunterApp(ctk.CTk):
 									   font=self.bold_font, text_color="red")
 			error_label.pack(expand=True)
 			return
+
+		# --- SURGICAL CHANGE: Centralized DB Connection and Component Init ---
+		self.db_conn = None
+		self.dispatcher = None
+		self.config = config_manager  # Assuming module-level access
+
+		if not self._init_db_and_components():
+			self.after(100, self.destroy)
+			return
+		# --- END CHANGE ---
 
 		# --- Main Layout ---
 		self.grid_columnconfigure(0, weight=2)
@@ -112,6 +128,29 @@ class HunterApp(ctk.CTk):
 		self.after(100, self.process_gui_log_queue)
 		self.after(200, self._run_startup_checks)
 
+		self.after(200, self.refresh_triage_list)
+
+	# --- SURGICAL CHANGE: New centralized init function ---
+	def _init_db_and_components(self):
+		"""Initializes DB connection and all dependent components."""
+		self.db_conn = db_manager.get_db_connection()
+		if not self.db_conn:
+			logger.critical("FATAL: Could not connect to PostgreSQL database.")
+			# TODO write messagebox for this error
+			#			messagebox.showerror("Database Error", "Could not connect to PostgreSQL. Application will close.")
+			return False
+
+		try:
+			self.dispatcher = Dispatcher(self.db_conn, self.config)
+		except Exception as e:
+			logger.critical(f"FATAL: Failed to initialize Dispatcher: {e}", exc_info=True)
+			# TODO write messagebox for this error
+			#			messagebox.showerror("Initialization Error", f"Failed to initialize dispatcher. Check logs.\n\n{e}")
+			return False
+
+		logger.info("Database connected and dispatcher initialized successfully.")
+		return True
+
 	def build_triage_desk(self):
 		title_label = ctk.CTkLabel(self.left_frame, text="Triage Desk", font=self.bold_font, text_color=TEXT_COLOR)
 		title_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -122,7 +161,7 @@ class HunterApp(ctk.CTk):
 		self.bottom_frame.grid_columnconfigure(0, weight=1)
 		self.bottom_frame.grid_columnconfigure(1, weight=1)
 		self.search_button = ctk.CTkButton(self.bottom_frame, text="Search for New Cases",
-										   command=self.start_search_thread, font=self.button_font)
+		                                   command=self.start_hunt, font=self.button_font)  # <-- RE-WIRED
 		self.search_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 		self.confirm_button = ctk.CTkButton(self.bottom_frame, text="Confirm & File Selected",
 											command=self.confirm_triage_action, font=self.button_font)
@@ -152,6 +191,38 @@ class HunterApp(ctk.CTk):
 		self.search_button.configure(state="disabled")
 		threading.Thread(target=self.dispatch_hunt(), daemon=True).start()
 
+	# --- SURGICAL CHANGE: Re-wired hunt process to use the new Dispatcher ---
+	def start_hunt(self):
+		"""Initiates a hunt in a background thread."""
+		logger.info("[APP]: Hunter dispatch requested...")
+		self.search_button.configure(state="disabled", text="Hunting...")
+
+		# Get the list of sources for the dispatcher from the db_manager
+		sources_to_hunt = db_manager.get_active_sources_by_purpose(self.db_conn)
+		if not sources_to_hunt:
+			logger.warning("No active sources found to hunt.")
+			self.search_button.configure(state="normal", text="Search for New Cases")
+			return
+
+		# Run the dispatcher's 'dispatch' method in a separate thread
+		hunt_thread = threading.Thread(
+				target=self.dispatcher.dispatch,
+				args=(sources_to_hunt,)
+		)
+		hunt_thread.daemon = True
+		hunt_thread.start()
+
+		self.after(100, self._check_hunt_status, hunt_thread)
+
+	def _check_hunt_status(self, thread):
+		"""Polls the hunt thread and refreshes the GUI when complete."""
+		if thread.is_alive():
+			self.after(1000, self._check_hunt_status, thread)
+		else:
+			logger.info("[APP]: Hunt thread has completed.")
+			self.search_button.configure(state="normal", text="Search for New Cases")
+			self.refresh_triage_list()
+
 	def dispatch_hunt(self):
 		"""
 		Kicks off a new intel-gathering hunt in a background thread.
@@ -175,23 +246,18 @@ class HunterApp(ctk.CTk):
 		logger.info("[APP]: Dispatcher has completed all hunts.")
 
 	def refresh_triage_list(self):
-		"""
-		Fetches the latest untriaged leads from the database and updates the GUI.
-		This replaces the old 'populate_triage_list'.
-		"""
+		"""Fetches unprocessed leads from the DB and updates the GUI."""
 		logger.info("[APP]: Refreshing Triage list from database...")
-
-		# 1. Get the fresh intel directly from our new db_manager function
-		staged_leads = db_manager.get_staged_leads()
 		for widget in self.scrollable_frame.winfo_children():
 			widget.destroy()
 		self.triage_items.clear()
+
+		unprocessed_leads = db_manager.get_unprocessed_leads(self.db_conn)
+
 		grouped_results = {}
-		for lead in staged_leads:
-			source = lead.get("source_name", "Unknown Source")
-			if source not in grouped_results:
-				grouped_results[source] = []
-			grouped_results[source].append(lead)
+		for lead in unprocessed_leads:  # <-- Now iterating over LeadData objects
+			grouped_results.setdefault(lead.source_name, []).append(lead)
+
 		for source, leads in grouped_results.items():
 			header = ctk.CTkFrame(self.scrollable_frame, fg_color=DARK_GRAY, cursor="hand2")
 			header.pack(fill="x", pady=(5, 1), padx=2)
@@ -205,7 +271,7 @@ class HunterApp(ctk.CTk):
 			header.bind("<Button-1>", lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
 			header_label.bind("<Button-1>",
 							  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
-		logger.info(f"[APP]: Triage list updated with {len(staged_leads)} leads.")
+		logger.info(f"[APP]: Triage list updated with {len(unprocessed_leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
 		header_label = header.winfo_children()[0]
@@ -242,11 +308,12 @@ class HunterApp(ctk.CTk):
 							   height=16, border_color=not_case_border, hover_color=not_case_hover,
 							   fg_color=not_case_fg, value="not_a_case").pack(side="left", padx=1)
 			subject_label = ctk.CTkLabel(item_frame,
-										 text=textwrap.shorten(lead_data["title"], width=50, placeholder="..."),
-										 anchor="w", cursor="hand2", font=self.main_font, text_color=TEXT_COLOR)
+			                             # Use attribute access: lead_data.title
+			                             text=textwrap.shorten(lead_data.title, width=50, placeholder="..."),
+			                             anchor="w", cursor="hand2", font=self.main_font, text_color="#E0E0E0")
 			subject_label.pack(side="left", padx=10, expand=True, fill="x")
 			subject_label.bind("<Button-1>", lambda e, data=lead_data: self.display_lead_detail(data))
-			CTkToolTip(subject_label, message=lead_data["title"], delay=0.25, follow=True, x_offset=tooltip_x,
+			CTkToolTip(subject_label, message=lead_data.title, delay=0.25, follow=True, x_offset=tooltip_x,
 					   y_offset=tooltip_y)
 			self.triage_items.append({"frame": item_frame, "data": lead_data, "decision_var": decision_var})
 
@@ -254,14 +321,18 @@ class HunterApp(ctk.CTk):
 		items_to_process = self.triage_items[:]
 		for item in items_to_process:
 			decision = item["decision_var"].get()
+			lead_object = item["data"]  # This is a LeadData object
 			if decision == "case":
-				logger.info(f"[TRIAGE SUCCESS]: Filing 'Case': {item['data']['title']}")
-				db_manager.add_case(item["data"])
+				logger.info(f"[TRIAGE SUCCESS]: Filing 'Case': {lead_object.title}")
+				# We now pass the clean LeadData object to add_case
+				db_manager.add_case(self.db_conn, lead_object)
 			elif decision == "not_a_case":
-				logger.info(f"[TRIAGE]: Filing 'Not a Case' for retraining.")
-				self.file_for_retraining(item["data"])
-		logger.info("[APP]: Triage complete. Refreshing search...")
-		self.start_search_thread()
+				logger.info(f"[TRIAGE]: Marking lead as 'ignored': {lead_object.title}")
+				# Use the lead_uuid from our object to update the status in the router
+				db_manager.update_lead_status(self.db_conn, lead_object.lead_uuid, 'IGNORED')
+
+		logger.info("[APP]: Triage complete. Refreshing list...")
+		self.refresh_triage_list()
 
 	def file_for_retraining(self, lead_data):
 		project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -276,7 +347,7 @@ class HunterApp(ctk.CTk):
 		except Exception as e:
 			logger.error(f"[SAVE ERROR]: Could not save retraining file: {e}")
 
-	def display_lead_detail(self, lead_data):
+	def display_lead_detail(self, lead_data: LeadData):
 		for widget in self.detail_frame.winfo_children(): widget.destroy()
 		self.detail_frame.grid_rowconfigure(0, weight=3)
 		self.detail_frame.grid_rowconfigure(1, weight=1)
@@ -284,7 +355,7 @@ class HunterApp(ctk.CTk):
 		top_pane = ctk.CTkFrame(self.detail_frame, fg_color=DARK_GRAY)
 		top_pane.grid(row=0, column=0, sticky="nsew")
 
-		lead_uuid = lead_data.get("lead_uuid")
+		lead_uuid = lead_data.lead_uuid
 		details_dict = db_manager.get_staged_lead_details(lead_uuid)
 
 		if details_dict:
@@ -299,7 +370,7 @@ class HunterApp(ctk.CTk):
 			logger.error(f"[APP ERROR]: Could not find details for lead {lead_uuid}.")
 			raw_html = "<html><body><h2>Error</h2><p>Could not retrieve lead details from the database.</p></body></html>"
 
-		styled_html = html_sanitizer.sanitize_and_style(raw_html, lead_data.get("title"))
+		styled_html = html_sanitizer.sanitize_and_style(raw_html, lead_data.title)
 
 		if styled_html:
 			html_viewer = tkinterweb.HtmlFrame(top_pane, messages_enabled=False,
@@ -317,7 +388,7 @@ class HunterApp(ctk.CTk):
 			text_box = ctk.CTkTextbox(top_pane, font=self.main_font, wrap="word", text_color=TEXT_COLOR,
 									  fg_color=DARK_GRAY)
 			text_box.pack(expand=True, fill="both")
-			text_box.insert("0.0", lead_data.get("full_text", "No content available."))
+			text_box.insert("0.0", lead_data.text)
 			text_box.configure(state="disabled")
 
 		bottom_pane = ctk.CTkFrame(self.detail_frame, fg_color=DARK_GRAY)
@@ -349,15 +420,12 @@ class HunterApp(ctk.CTk):
 		return "break"
 
 	@staticmethod
-	def open_link_in_browser(url):
+	def open_link_in_browser(self, url):
 		logger.info(f"[APP]: Opening external link: {url}")
 		try:
 			webbrowser.open_new_tab(url)
 		except Exception as e:
 			logger.error(f"[APP ERROR]: Could not open link: {e}")
-
-	def _is_scrolled_to_bottom(self, textbox):
-		return float(textbox.yview()[0]) >= 0.999
 
 	def process_gui_log_queue(self):
 		processed_any = False
@@ -416,3 +484,10 @@ class HunterApp(ctk.CTk):
 				logger.info(f"  -> PENDING: {task_name}")
 		else:
 			logger.info("[APP SUCCESS]: All system tasks are complete.")
+
+	def on_closing(self):
+		"""SURGICAL CHANGE: Ensure the central connection is closed."""
+		logger.info("Closing database connection and shutting down.")
+		if self.db_conn:
+			self.db_conn.close()
+		self.destroy()

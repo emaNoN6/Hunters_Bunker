@@ -96,3 +96,154 @@ def add_keywords(keyword_data):
     finally:
         if conn:
             conn.close()
+
+
+# ==========================================================
+# Search Term Morphology & API Caching (WRITE Operations)
+# ==========================================================
+
+def store_search_term(base_term, api_response):
+	"""
+	Stores a search term with its full API response.
+
+	Args:
+		base_term (str): The base word
+		api_response (dict): The full JSON response from WordsAPI
+
+	Returns:
+		bool: True on success, False on failure
+	"""
+	sql = """
+		INSERT INTO search_terms (base_term, api_response, last_updated)
+		VALUES (%s, %s, now())
+		ON CONFLICT (base_term) DO UPDATE 
+		SET api_response = EXCLUDED.api_response, last_updated = now();
+	"""
+	conn = get_db_connection()
+	if not conn:
+		return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (base_term, psycopg2.extras.Json(api_response)))
+			conn.commit()
+			return True
+	except Exception as e:
+		logger.error(f"[DB_ADMIN ERROR]: Failed to store search term '{base_term}': {e}")
+		conn.rollback()
+		return False
+	finally:
+		if conn:
+			conn.close()
+
+
+def store_derivation(base_term, derivation, source='wordsapi'):
+	"""
+	Stores a derivation/variant of a base term.
+
+	Args:
+		base_term (str): The base word
+		derivation (str): The variant form
+		source (str): Where this came from ('wordsapi' or 'inflect')
+
+	Returns:
+		bool: True on success, False on failure
+	"""
+	sql = """
+		INSERT INTO search_derivations (base_term, derivation, source)
+		VALUES (%s, %s, %s)
+		ON CONFLICT (base_term, derivation) DO NOTHING;
+	"""
+	conn = get_db_connection()
+	if not conn:
+		return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (base_term, derivation, source))
+			conn.commit()
+			return True
+	except Exception as e:
+		logger.error(f"[DB_ADMIN ERROR]: Failed to store derivation '{derivation}' for '{base_term}': {e}")
+		conn.rollback()
+		return False
+	finally:
+		if conn:
+			conn.close()
+
+
+def store_synonym(base_term, synonym, sense_index, definition_snippet=None):
+	"""
+	Stores a synonym relationship with its context.
+
+	Args:
+		base_term (str): The base word
+		synonym (str): The synonym
+		sense_index (int): Which sense/definition this came from (0-indexed)
+		definition_snippet (str, optional): Brief definition for context
+
+	Returns:
+		bool: True on success, False on failure
+	"""
+	sql = """
+		INSERT INTO search_synonyms (base_term, synonym, sense_index, definition_snippet)
+		VALUES (%s, %s, %s, %s)
+		ON CONFLICT (base_term, synonym, sense_index) DO NOTHING;
+	"""
+	conn = get_db_connection()
+	if not conn:
+		return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (base_term, synonym, sense_index, definition_snippet))
+			conn.commit()
+			return True
+	except Exception as e:
+		logger.error(f"[DB_ADMIN ERROR]: Failed to store synonym '{synonym}' for '{base_term}': {e}")
+		conn.rollback()
+		return False
+	finally:
+		if conn:
+			conn.close()
+
+
+def log_api_call(service, endpoint, word_queried, response_code, response_headers):
+	"""
+	Logs an API call with rate limit information.
+
+	Args:
+		service (str): API service name (e.g., 'wordsapi')
+		endpoint (str): The endpoint called (e.g., '/words/demon')
+		word_queried (str): The word that was looked up
+		response_code (int): HTTP response code
+		response_headers (dict): Response headers containing rate limit info
+
+	Returns:
+		bool: True on success, False on failure
+	"""
+	sql = """
+		INSERT INTO api_usage_log 
+		(service, endpoint, word_queried, response_code, rate_limit_remaining, rate_limit_limit, rate_limit_reset)
+		VALUES (%s, %s, %s, %s, %s, %s, %s);
+	"""
+	conn = get_db_connection()
+	if not conn:
+		return False
+	try:
+		with conn.cursor() as cursor:
+			cursor.execute(sql, (
+				service,
+				endpoint,
+				word_queried,
+				response_code,
+				response_headers.get('x-ratelimit-requests-remaining'),
+				response_headers.get('x-ratelimit-requests-limit'),
+				response_headers.get('x-ratelimit-requests-reset')
+			))
+			conn.commit()
+			return True
+	except Exception as e:
+		logger.error(f"[DB_ADMIN ERROR]: Failed to log API call: {e}")
+		conn.rollback()
+		return False
+	finally:
+		if conn:
+			conn.close()

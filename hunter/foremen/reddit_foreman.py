@@ -1,84 +1,85 @@
-# foremen/reddit_foreman.py
+# ==========================================================
+# Hunter's Command Console - Reddit Foreman (v2 - Dataclass Compliant)
+# Copyright (c) 2025, M. Stilson & Codex
+# ==========================================================
 
 import logging
 from datetime import datetime, timezone
-from search_agents import reddit_agent
 
-logger = logging.getLogger("Reddit Foreman")
+# Import our new, standardized data contracts
+from hunter.models import LeadData, RedditMetadata
+
+logger = logging.getLogger('Reddit Foreman')
+
+UNKNOWN_DATE = datetime(1900, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
-def run_hunt(source, credentials):
+class RedditForeman:
 	"""
-	Manages the hunt for a specific Reddit source.
-	It deploys the agent, then translates the raw results.
+	The specialist for processing raw intel from the Reddit source.
+	Its sole responsibility is to translate the raw PRAW submission objects
+	(as dictionaries) into our standardized, validated LeadData objects.
 	"""
-	logger.info(f"[{source.get('source_name')}]: Deploying agent to hunt r/{source.get('target')}")
 
-	try:
-		raw_submissions, newest_id = reddit_agent.hunt(source, credentials)
+	def __init__(self, source_config):
+		self.source_name = source_config.get('name', 'Reddit')
+		logger.info(f"Reddit Foreman initialized for source: {self.source_name}")
 
-		if raw_submissions is None:
-			logger.error(f"[{source.get('source_name')}]: Hunt failed critically. Agent returned None.")
-			return [], None
+	def translate_leads(self, raw_posts: list[dict]) -> list[LeadData]:
+		"""
+		Takes a list of raw post dictionaries from the Reddit agent
+		and translates them into a list of standardized LeadData objects.
+		"""
+		processed_leads = []
+		for post in raw_posts:
+			try:
+				# The translation process is now a formal object creation.
+				lead = self._translate_single_post(post)
+				if lead:
+					processed_leads.append(lead)
+			except (ValueError, TypeError, KeyError) as e:
+				logger.error(f"Failed to translate Reddit post '{post.get('title')}'. Reason: {e}")
+				continue  # Skip this lead and move to the next
 
-		logger.info(
-			f"[{source.get('source_name')}]: Agent returned with {len(raw_submissions)} submissions. Translating...")
+		logger.info(f"Successfully translated {len(processed_leads)} Reddit posts into LeadData objects.")
+		return processed_leads
 
-		clean_leads = []
-		for submission in raw_submissions:
-			translated_lead = _translate_submission(submission, source)
-			if translated_lead:
-				clean_leads.append(translated_lead)
+	def _translate_single_post(self, post_data: dict) -> LeadData | None:
+		"""
+		Forge a single raw post dictionary into a LeadData object.
+		"""
+		# Step 1: Forge the source-specific RedditMetadata object first.
+		reddit_metadata = RedditMetadata(
+				score=post_data.get('score'),
+				author=post_data.get('author'),
+				subreddit=post_data.get('subreddit'),
+				num_comments=post_data.get('num_comments'),
+				post_id=post_data.get('id'),
+				is_self=post_data.get('is_self')
+		)
 
-		return clean_leads, newest_id
+		# Step 2: Parse the publication date. Reddit provides a UTC timestamp.
+		try:
+			# PRAW provides created_utc as a float timestamp
+			created_timestamp = post_data['created_utc']
+			publication_date = datetime.fromtimestamp(created_timestamp, tz=timezone.utc)
+		except (KeyError, ValueError):
+			logger.warning(f"Could not parse created_utc for post '{post_data.get('title')}'. Using sentinel date.")
+			publication_date = UNKNOWN_DATE
 
-	except Exception:
-		logger.error(f"A critical error occurred while running foreman for '{source.get('source_name')}'",
-		             exc_info=True)
-		return [], None
+		# Step 3: Forge the final, validated LeadData object.
+		lead = LeadData(
+				title=post_data['title'],
+				url=post_data['url'],
+				source_name=self.source_name,
+				publication_date=publication_date,
+				text=post_data.get('selftext'),
+				html=post_data.get('selftext_html'),
+				# Use the 'thumbnail' for a consistent image, but check for 'url' if it's an image post
+				image_url=post_data.get('thumbnail') if post_data.get('thumbnail') not in ['self', 'default',
+				                                                                           ''] else post_data.get(
+					'url'),
+				metadata=reddit_metadata.__dict__
+		)
 
-
-def _translate_submission(submission, source):
-	"""
-	Translates a raw PRAW Submission object into our Standardized Lead Report.
-	This version is more robust and handles missing data gracefully.
-	"""
-	try:
-		# --- THIS IS THE FIX ---
-		# 1. Be paranoid about the URL. Use the main URL, but if it's missing or
-		#    points to the comments, fall back to the full permalink.
-		url = submission.url
-		if not url or 'reddit.com' in url:
-			url = f"https://www.reddit.com{submission.permalink}"
-
-		# 2. Ensure publication_date is always a valid datetime object.
-		#    PRAW's created_utc is a Unix timestamp.
-		pub_date = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc)
-
-		# 3. Build the Triage Metadata dictionary safely, using .get() with defaults.
-		triage_meta = {
-			"reddit_score":        getattr(submission, 'score', 0),
-			"reddit_upvote_ratio": getattr(submission, 'upvote_ratio', 0.0),
-			"reddit_num_comments": getattr(submission, 'num_comments', 0),
-			"reddit_is_oc":        getattr(submission, 'is_original_content', False)
-		}
-		# --- END FIX ---
-
-		standardized_report = {
-			"title":            submission.title,
-			"url":              url,
-			"publication_date": pub_date,
-			"text_content":     submission.selftext,
-			"html_content":     submission.selftext_html,
-			"source_id":        source.get('id'),
-			"source_name":      source.get('source_name'),
-			"triage_metadata":  triage_meta,
-		}
-		return standardized_report
-
-	except Exception:
-		# If a single submission is corrupted, log it and move on.
-		# This prevents one bad post from crashing the whole hunt.
-		submission_id = getattr(submission, 'id', 'N/A')
-		logger.error(f"Failed to translate submission '{submission_id}'", exc_info=True)
-		return None
+		return lead

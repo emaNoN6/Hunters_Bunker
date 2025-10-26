@@ -1,5 +1,5 @@
 # ==========================================================
-# Hunter's Command Console - Definitive GNews.io Agent (v2)
+# Hunter's Command Console - GNews.io Agent (v3 - Simplified)
 # Copyright (c) 2025, M. Stilson & Codex
 # ==========================================================
 
@@ -10,11 +10,14 @@ logger = logging.getLogger("GnewsIO Agent")
 
 def hunt(source, credentials):
 	"""
-	Hunts GNews.io for new articles since the last check.
+	Hunts GNews.io for new articles.
+	This agent is a "dumb scout". Its only job is to fetch the raw data
+	and return it. The foreman is responsible for all translation.
 	"""
 	query = source.get('target')
-	last_checked = source.get('last_checked_date')
-	source_name = source.get('source_name')
+	# The db_manager provides last_checked as a datetime object
+	last_checked = source.get('last_checked')
+	source_name = source.get('name')
 
 	logger.info(f"[{source_name}]: Waking up. Hunting for '{query}'...")
 
@@ -33,37 +36,29 @@ def hunt(source, credentials):
 		'sortby':  'publishedAt'
 	}
 
-	# Use last_checked_date as a bookmark, with a 1-hour safety buffer
+	# Use last_checked as a bookmark, with a 1-hour safety buffer
+	# to account for any API delays or clock skew.
 	if last_checked:
 		start_time = last_checked - timedelta(hours=1)
+		# GNews requires ISO 8601 format with 'Z' for UTC.
 		params['from'] = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
 		logger.info(f"[{source_name}]: Searching for articles published after {params['from']}")
 
 	# --- Execute the Hunt ---
-	leads = []
 	try:
 		response = requests.get(url, params=params)
+		# Will raise an HTTPError for bad responses (4xx or 5xx)
 		response.raise_for_status()
 		articles = response.json().get('articles', [])
 
-		for article in articles:
-			publication_date = datetime.strptime(article['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').replace(
-				tzinfo=timezone.utc)
+		# The agent's job is complete. It returns the raw, unprocessed intel.
+		# The foreman will handle all translation and data cleaning.
+		logger.info(f"[{source_name}]: Hunt successful. Returned {len(articles)} raw articles.")
+		return articles, None
 
-			lead_data = {
-				"title":            article['title'],
-				"url":              article['url'],
-				"text":             article.get('content', ''),
-				"html":             None,
-				"publication_date": publication_date,
-				"source_name":      source_name
-			}
-			leads.append(lead_data)
-
-		# News APIs don't use bookmarks, so we return None for the newest_id
-		logger.info(f"[{source_name}]: Hunt successful. Returned {len(leads)} new leads.")
-		return leads, None
-
+	except requests.exceptions.RequestException as e:
+		logger.error(f"[{source_name} ERROR]: A network error occurred during the hunt: {e}")
+		return [], None
 	except Exception as e:
-		logger.error(f"[{source_name} ERROR]: An error occurred during the hunt: {e}")
+		logger.error(f"[{source_name} ERROR]: An unexpected error occurred during the hunt: {e}")
 		return [], None

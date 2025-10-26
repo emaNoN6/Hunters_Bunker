@@ -73,7 +73,11 @@ def get_reddit_credentials():
         return creds
     return None
 
-# ... (add other credential getters like gnews.io here as needed) ...
+
+def get_wordsapi_credentials():
+	"""Reads the WordsAPI credentials."""
+	if "WordsAPI" in _config:
+		return dict(_config["WordsAPI"])
 
 # --- Initial Setup ---
 _load_config()
