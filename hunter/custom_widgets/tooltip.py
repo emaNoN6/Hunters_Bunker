@@ -5,22 +5,6 @@ version: 0.8 (modified)
  - cancels pending after calls to prevent residual tooltips
 """
 
-#  ==========================================================
-#  Hunter's Command Console
-#  #
-#  File: tooltip.py
-#  Last Modified: 7/27/25, 2:57 PM
-#  Copyright (c) 2025, M. Stilson & Codex
-#  #
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the MIT License.
-#  #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#  LICENSE file for more details.
-#  ==========================================================
-
 import time
 import sys
 import customtkinter
@@ -257,3 +241,100 @@ class CTkToolTip(Toplevel):
             self.messageVar.set(message)
         if kwargs:
             self.message_label.configure(**kwargs)
+
+
+# Add this to hunter/custom_widgets/tooltip.py or create a new file
+
+import time
+from tkinter import Toplevel, Label
+
+
+class TkToolTip(Toplevel):
+	"""Simple tooltip that works with any tkinter widget"""
+
+	def __init__(
+			self,
+			widget,
+			message: str = "",
+			delay: float = 0.25,
+			follow: bool = True,
+			x_offset: int = 20,
+			y_offset: int = 10,
+			bg_color: str = "#2b2b2b",
+			fg_color: str = "#E0E0E0",
+			font: tuple = ("Arial", 10),
+			padding: int = 5,
+	):
+		super().__init__()
+		self.widget = widget
+		self.message = message
+		self.delay = delay
+		self.follow = follow
+		self.x_offset = x_offset
+		self.y_offset = y_offset
+
+		self._after_id = None
+		self.last_moved = 0
+		self.status = "outside"
+
+		# Setup window
+		self.withdraw()
+		self.overrideredirect(True)
+		self.configure(bg=bg_color)
+
+		# Create label
+		self.label = Label(
+				self,
+				text=message,
+				bg=bg_color,
+				fg=fg_color,
+				font=font,
+				padx=padding,
+				pady=padding,
+				relief="solid",
+				borderwidth=2
+		)
+		self.label.pack()
+
+		# Bind events
+		widget.bind("<Enter>", self.on_enter, add="+")
+		widget.bind("<Motion>", self.on_enter, add="+")
+		widget.bind("<Leave>", self.on_leave, add="+")
+
+	def on_enter(self, event):
+		self.last_moved = time.time()
+		self.status = "inside"
+
+		# Cancel pending show
+		if self._after_id:
+			self.after_cancel(self._after_id)
+			self._after_id = None
+
+		# Position tooltip
+		x = event.x_root + self.x_offset
+		y = event.y_root + self.y_offset
+		self.geometry(f"+{x}+{y}")
+
+		# Schedule show
+		self._after_id = self.after(int(self.delay * 1000), self._show)
+
+	def on_leave(self, event=None):
+		# Cancel pending show
+		if self._after_id:
+			self.after_cancel(self._after_id)
+			self._after_id = None
+
+		self.status = "outside"
+		self.withdraw()
+
+	def _show(self):
+		self._after_id = None
+		if self.status == "inside" and (time.time() - self.last_moved) >= self.delay:
+			self.status = "visible"
+			self.deiconify()
+
+	def hide(self):
+		if self._after_id:
+			self.after_cancel(self._after_id)
+			self._after_id = None
+		self.withdraw()

@@ -17,11 +17,13 @@ from PIL import Image
 import tkinterweb
 from functools import partial
 from hunter import dispatcher
+import tkinter as tk
+from tkinter import ttk
 
 # --- Our Custom Tools ---
 from hunter import config_manager
 from hunter import db_manager
-from hunter.custom_widgets.tooltip import CTkToolTip
+from hunter.custom_widgets.tooltip import TkToolTip
 from hunter.html_parsers import html_sanitizer, link_extractor
 from hunter.utils import logger_setup
 # --- SURGICAL CHANGE: Import new Dispatcher class and data contracts ---
@@ -101,6 +103,8 @@ class HunterApp(ctk.CTk):
 		self.dispatcher = None
 		self.config = config_manager  # Assuming module-level access
 
+		self.tree_tooltip = None
+
 		if not self._init_db_and_components():
 			self.after(100, self.destroy)
 			return
@@ -152,20 +156,167 @@ class HunterApp(ctk.CTk):
 		return True
 
 	def build_triage_desk(self):
-		title_label = ctk.CTkLabel(self.left_frame, text="Triage Desk", font=self.bold_font, text_color=TEXT_COLOR)
+		"""Build the triage desk with ttk.Treeview for performance"""
+
+		style = ttk.Style()
+		style.theme_use('default')
+		tree_font = (FONT_FAMILY, FONT_SIZE)
+		heading_font = (FONT_FAMILY, FONT_SIZE, "bold")
+
+		# Title
+		title_label = ctk.CTkLabel(self.left_frame, text="Triage Desk",
+		                           font=self.bold_font, text_color=TEXT_COLOR)
 		title_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
-		self.scrollable_frame = ctk.CTkScrollableFrame(self.left_frame, fg_color=DARK_GRAY)
-		self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+
+		# Style the Treeview to match dark theme
+		style = ttk.Style()
+		style.theme_use('default')
+		style.configure("Treeview",
+		                background=DARK_GRAY,
+		                foreground=TEXT_COLOR,
+		                fieldbackground=DARK_GRAY,
+		                font=tree_font,
+		                rowheight=int(FONT_SIZE * 2),
+		                borderwidth=0)
+		style.configure("Treeview.Heading",
+		                background=DARK_BG,
+		                foreground=TEXT_COLOR,
+		                font=heading_font,
+		                relief="flat")
+		style.map('Treeview', background=[('selected', ACCENT_COLOR)])
+
+		# Create Treeview with columns
+		self.triage_tree = ttk.Treeview(
+				self.left_frame,
+				columns=('source', 'date', 'decision'),
+				show='tree headings',
+				selectmode='extended',
+				height=25
+		)
+
+		# Configure columns
+		self.triage_tree.heading('#0', text='Title')
+		self.triage_tree.heading('source', text='Source')
+		self.triage_tree.heading('date', text='Date')
+		self.triage_tree.heading('decision', text='Decision')
+
+		self.triage_tree.column('#0', width=400, anchor='w')
+		self.triage_tree.column('source', width=150, anchor='w')
+		self.triage_tree.column('date', width=100, anchor='w')
+		self.triage_tree.column('decision', width=100, anchor='center')
+
+		# Add scrollbar
+		scrollbar = ttk.Scrollbar(self.left_frame, orient="vertical",
+		                          command=self.triage_tree.yview)
+		self.triage_tree.configure(yscrollcommand=scrollbar.set)
+
+		# Grid layout
+		self.triage_tree.grid(row=1, column=0, sticky="nsew", padx=(10, 0), pady=(0, 10))
+		scrollbar.grid(row=1, column=1, sticky="ns", pady=(0, 10))
+
+		# Buttons at bottom
 		self.bottom_frame = ctk.CTkFrame(self.left_frame, fg_color="transparent")
-		self.bottom_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+		self.bottom_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 		self.bottom_frame.grid_columnconfigure(0, weight=1)
 		self.bottom_frame.grid_columnconfigure(1, weight=1)
+
 		self.search_button = ctk.CTkButton(self.bottom_frame, text="Search for New Cases",
-		                                   command=self.start_hunt, font=self.button_font)  # <-- RE-WIRED
+		                                   command=self.start_search_thread, font=self.button_font)
 		self.search_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
 		self.confirm_button = ctk.CTkButton(self.bottom_frame, text="Confirm & File Selected",
-											command=self.confirm_triage_action, font=self.button_font)
+		                                    command=self.confirm_triage_action, font=self.button_font)
 		self.confirm_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+		# Bind events for tooltips and clicks
+		self.triage_tree.bind('<Motion>', self.show_tree_tooltip)
+		self.triage_tree.bind('<Leave>', self.hide_tree_tooltip)
+		self.triage_tree.bind('<Double-1>', self.on_tree_double_click)
+
+		# Store lead data by tree item id
+		self.tree_lead_data = {}
+
+		# bind keys for classification
+		self.triage_tree.bind('<c>', self.mark_selected_as_case)
+		self.triage_tree.bind('<C>', self.mark_selected_as_case)
+		self.triage_tree.bind('<n>', self.mark_selected_as_not_case)
+		self.triage_tree.bind('<N>', self.mark_selected_as_not_case)
+		self.triage_tree.bind('<s>', self.mark_selected_as_skip)
+		self.triage_tree.bind('<S>', self.mark_selected_as_skip)
+		self.triage_tree.bind('<space>', self.clear_selected_decision)
+		self.triage_tree.bind('<BackSpace>', self.clear_selected_decision)
+
+	def mark_selected_as_case(self, event=None):
+		"""Mark selected leads as CASE"""
+		selected = self.triage_tree.selection()
+		for item_id in selected:
+			if item_id in self.tree_lead_data:
+				self.triage_tree.set(item_id, 'decision', 'CASE')
+		logger.info(f"[APP]: Marked {len(selected)} item(s) as CASE")
+
+	def mark_selected_as_not_case(self, event=None):
+		"""Mark selected leads as NOT_CASE"""
+		selected = self.triage_tree.selection()
+		for item_id in selected:
+			if item_id in self.tree_lead_data:
+				self.triage_tree.set(item_id, 'decision', 'NOT_CASE')
+		logger.info(f"[APP]: Marked {len(selected)} item(s) as NOT_CASE")
+
+	def mark_selected_as_skip(self, event=None):
+		"""Mark selected leads as SKIP (junk)"""
+		selected = self.triage_tree.selection()
+		for item_id in selected:
+			if item_id in self.tree_lead_data:
+				self.triage_tree.set(item_id, 'decision', 'SKIP')
+		logger.info(f"[APP]: Marked {len(selected)} item(s) as SKIP")
+
+	def clear_selected_decision(self, event=None):
+		"""Clear decision (back to untouched)"""
+		selected = self.triage_tree.selection()
+		for item_id in selected:
+			if item_id in self.tree_lead_data:
+				self.triage_tree.set(item_id, 'decision', '')
+		logger.info(f"[APP]: Cleared decision for {len(selected)} item(s)")
+
+	def show_tree_tooltip(self, event):
+		"""Show tooltip with full title on hover"""
+		item_id = self.triage_tree.identify_row(event.y)
+
+		if item_id and item_id in self.tree_lead_data:
+			lead = self.tree_lead_data[item_id]
+
+			# Create tooltip once if it doesn't exist
+			if not self.tree_tooltip:
+				self.tree_tooltip = TkToolTip(
+						self.triage_tree,
+						message=lead.title,
+						delay=0.25,
+						x_offset=20,
+						y_offset=10,
+						bg_color=DARK_GRAY,
+						fg_color=TEXT_COLOR,
+						font=(FONT_FAMILY, FONT_SIZE),
+						padding=8  # Adjust as needed
+				)
+			else:
+				# Update existing tooltip's message
+				self.tree_tooltip.label.configure(text=lead.title)
+				self.tree_tooltip.on_enter(event)
+		else:
+			if self.tree_tooltip:
+				self.tree_tooltip.hide()
+
+	def hide_tree_tooltip(self, event):
+		"""Hide tooltip when mouse leaves"""
+		if self.tree_tooltip:
+			self.tree_tooltip.on_leave()
+
+	def on_tree_double_click(self, event):
+		"""Display lead details when double-clicked"""
+		item_id = self.triage_tree.identify_row(event.y)
+		if item_id and item_id in self.tree_lead_data:
+			lead = self.tree_lead_data[item_id]
+			self.display_lead_detail(lead)
 
 	def build_dossier_viewer(self):
 		self.tab_view = ctk.CTkTabview(self.right_frame, fg_color=DARK_BG)
@@ -178,6 +329,7 @@ class HunterApp(ctk.CTk):
 										  text_color=TEXT_COLOR)
 		self.log_textbox.pack(expand=True, fill="both")
 		self.log_textbox.tag_config("INFO", foreground=ACCENT_COLOR)
+		self.log_textbox.tag_config("DEBUG", foreground="#AA0033")
 		self.log_textbox.tag_config("SUCCESS", foreground=SUCCESS_COLOR)
 		self.log_textbox.tag_config("ERROR", foreground=ERROR_COLOR)
 		self.log_textbox.tag_config("WARNING", foreground=WARNING_COLOR)
@@ -246,34 +398,72 @@ class HunterApp(ctk.CTk):
 		logger.info("[APP]: Dispatcher has completed all hunts.")
 
 	def refresh_triage_list(self):
-		"""Fetches unprocessed leads from the DB and updates the GUI."""
+		"""
+		Fetches the latest untriaged leads from the database and populates the Treeview.
+		"""
+		import time
+		from collections import defaultdict
+
 		logger.info("[APP]: Refreshing Triage list from database...")
-		for widget in self.scrollable_frame.winfo_children():
-			widget.destroy()
-		self.triage_items.clear()
+		start_time = time.perf_counter()
 
-		unprocessed_leads = db_manager.get_unprocessed_leads(self.db_conn)
+		# Clear existing tree items
+		for item in self.triage_tree.get_children():
+			self.triage_tree.delete(item)
+		self.tree_lead_data = {}
+		clear_time = time.perf_counter()
+		logger.info(f"[TIMING]: Tree cleanup took {clear_time - start_time:.3f}s")
 
-		grouped_results = {}
-		for lead in unprocessed_leads:  # <-- Now iterating over LeadData objects
-			grouped_results.setdefault(lead.source_name, []).append(lead)
+		# Fetch leads from database (returns list[LeadData])
+		leads = db_manager.get_unprocessed_leads(self.db_conn)
+		fetch_time = time.perf_counter()
+		logger.info(f"[TIMING]: DB fetch took {fetch_time - clear_time:.3f}s for {len(leads)} leads")
 
-		for source, leads in grouped_results.items():
-			header = ctk.CTkFrame(self.scrollable_frame, fg_color=DARK_GRAY, cursor="hand2")
-			header.pack(fill="x", pady=(5, 1), padx=2)
-			lead_count = len(leads)
-			plural_s = 's' if lead_count != 1 else ''
-			label_text = f"▶ {source} ({lead_count} new lead{plural_s})"
-			header_label = ctk.CTkLabel(header, text=label_text, font=self.bold_font, anchor="w", text_color=TEXT_COLOR)
-			header_label.pack(side="left", padx=10, pady=5)
-			content_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
-			header._is_expanded = False
-			header.bind("<Button-1>", lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
-			header_label.bind("<Button-1>",
-							  lambda e, h=header, c=content_frame, l=leads: self._toggle_source_group(h, c, l))
-		logger.info(f"[APP]: Triage list updated with {len(unprocessed_leads)} leads.")
+		if not leads:
+			logger.info("[APP]: No leads found for triage.")
+			return
+
+		# Group leads by source_name
+		grouped_leads = defaultdict(list)
+		for lead in leads:
+			grouped_leads[lead.source_name].append(lead)
+
+		# Populate tree with grouped leads
+		for source_name, source_leads in grouped_leads.items():
+			# Insert parent (source group)
+			parent_id = self.triage_tree.insert(
+					'', 'end',
+					text=f"{source_name} ({len(source_leads)} new leads)",
+					values=('', '', ''),
+					tags=('source_group',)
+			)
+
+			# Insert children (individual leads)
+			for lead in source_leads:
+				# Format publication date
+				pub_date = lead.publication_date.strftime('%Y-%m-%d') if lead.publication_date else 'Unknown'
+
+				# Truncate long titles
+				title = lead.title
+				display_title = title[:80] + '...' if len(title) > 80 else title
+
+				lead_id = self.triage_tree.insert(
+						parent_id, 'end',
+						text=display_title,
+						values=(source_name, pub_date, ''),
+						tags=('lead_item',)
+				)
+
+				# Store full lead data object
+				self.tree_lead_data[lead_id] = lead
+
+		render_time = time.perf_counter()
+		logger.info(f"[TIMING]: Tree population took {render_time - fetch_time:.3f}s")
+		logger.info(f"[TIMING]: TOTAL refresh took {render_time - start_time:.3f}s")
+		logger.info(f"[APP]: Triage list updated with {len(leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
+		start_time = time.perf_counter();
 		header_label = header.winfo_children()[0]
 		if header._is_expanded:
 			content_frame.pack_forget()
@@ -283,8 +473,11 @@ class HunterApp(ctk.CTk):
 			header_label.configure(text=header_label.cget("text").replace("▶", "▼"))
 			content_frame.pack(fill="x", padx=2, after=header)
 			header._is_expanded = True
+			start_time = time.perf_counter()
 			if not content_frame.winfo_children():
 				self._create_lead_widgets(content_frame, leads)
+		end_time = time.perf_counter()
+		logger.debug(f"[APP]: Expanding source group took {end_time - start_time:.2f} seconds.")
 
 	def _create_lead_widgets(self, parent_frame, leads):
 		tooltip_x = int(GUI_CONFIG.get("tooltip_x_offset", 20))
@@ -313,27 +506,39 @@ class HunterApp(ctk.CTk):
 			                             anchor="w", cursor="hand2", font=self.main_font, text_color="#E0E0E0")
 			subject_label.pack(side="left", padx=10, expand=True, fill="x")
 			subject_label.bind("<Button-1>", lambda e, data=lead_data: self.display_lead_detail(data))
-			CTkToolTip(subject_label, message=lead_data.title, delay=0.25, follow=True, x_offset=tooltip_x,
+			TkToolTip(subject_label, message=lead_data.title, delay=0.25, follow=True, x_offset=tooltip_x,
 					   y_offset=tooltip_y)
 			self.triage_items.append({"frame": item_frame, "data": lead_data, "decision_var": decision_var})
 
 	def confirm_triage_action(self):
-		items_to_process = self.triage_items[:]
-		for item in items_to_process:
-			decision = item["decision_var"].get()
-			lead_object = item["data"]  # This is a LeadData object
-			if decision == "case":
-				logger.info(f"[TRIAGE SUCCESS]: Filing 'Case': {lead_object.title}")
-				# We now pass the clean LeadData object to add_case
-				db_manager.add_case(self.db_conn, lead_object)
-			elif decision == "not_a_case":
-				logger.info(f"[TRIAGE]: Marking lead as 'ignored': {lead_object.title}")
-				# Use the lead_uuid from our object to update the status in the router
-				db_manager.update_lead_status(self.db_conn, lead_object.lead_uuid, 'IGNORED')
+		"""Process all leads with decisions (CASE, NOT_CASE, or SKIP)"""
+		processed_count = 0
 
-		logger.info("[APP]: Triage complete. Refreshing list...")
+		# Iterate through all tree items
+		for item_id in self.tree_lead_data.keys():
+			decision = self.triage_tree.set(item_id, 'decision')
+
+			if decision == 'CASE':
+				lead = self.tree_lead_data[item_id]
+				db_manager.add_case(lead, self.db_conn)
+				logger.info(f"[TRIAGE]: Filed as CASE: {lead.title}")
+				processed_count += 1
+
+			elif decision == 'NOT_CASE':
+				lead = self.tree_lead_data[item_id]
+				# Your existing file_for_retraining logic
+				logger.info(f"[TRIAGE]: Filed as NOT_CASE: {lead.title}")
+				processed_count += 1
+
+			elif decision == 'SKIP':
+				lead = self.tree_lead_data[item_id]
+				logger.info(f"[TRIAGE]: Skipped (junk): {lead.title}")
+				processed_count += 1
+
+		# Items with decision == '' are untouched and stay in the list
+
+		logger.info(f"[APP]: Processed {processed_count} leads. Refreshing list...")
 		self.refresh_triage_list()
-
 	def file_for_retraining(self, lead_data):
 		project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 		not_case_dir = os.path.join(project_root, "data", "training_data", "not_a_case")
@@ -412,7 +617,7 @@ class HunterApp(ctk.CTk):
 				# stable callback function that correctly captures the URL.
 				click_handler = partial(self.open_link_in_browser, link['url'])
 				link_label.bind("<Button-1>", click_handler)
-				CTkToolTip(links_frame, message=link["url"])
+				TkToolTip(links_frame, message=link["url"])
 
 	@staticmethod
 	def _consume_scroll_event(event):
