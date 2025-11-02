@@ -3,6 +3,8 @@
 # v6.0 - Definitive version with all features, correct imports,
 #        and the final, precise scroll fix.
 # ==========================================================
+import base64
+import io
 
 import customtkinter as ctk
 import threading
@@ -221,7 +223,7 @@ class HunterApp(ctk.CTk):
 		self.bottom_frame.grid_columnconfigure(1, weight=1)
 
 		self.search_button = ctk.CTkButton(self.bottom_frame, text="Search for New Cases",
-		                                   command=self.start_search_thread, font=self.button_font)
+		                                   command=self.start_hunt, font=self.button_font)
 		self.search_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 
 		self.confirm_button = ctk.CTkButton(self.bottom_frame, text="Confirm & File Selected",
@@ -539,6 +541,7 @@ class HunterApp(ctk.CTk):
 
 		logger.info(f"[APP]: Processed {processed_count} leads. Refreshing list...")
 		self.refresh_triage_list()
+
 	def file_for_retraining(self, lead_data):
 		project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 		not_case_dir = os.path.join(project_root, "data", "training_data", "not_a_case")
@@ -605,11 +608,28 @@ class HunterApp(ctk.CTk):
 		links_frame = ctk.CTkScrollableFrame(bottom_pane, fg_color="transparent")
 		links_frame.pack(fill="both", expand=True, padx=5, pady=5)
 		extracted_links = link_extractor.find_links(raw_html)
+		images = []
+
+		if lead_data.metadata is not None:
+			metadata = lead_data.metadata
+			if metadata.__contains__('article_url'):
+				metadata_link = metadata.get('article_url')
+				extracted_links.append({'text': metadata.get('title'), 'url': metadata_link})
+
+			if metadata.__contains__('article_image'):
+				image = self.get_article_image(metadata.get('article_image'))
+				if image:
+					images.append({'text': 'Article Image', 'url': image})
+
+		if lead_data.url is not None:
+			extracted_links.append({'text': 'Article URL', 'url': lead_data.url})
+
 		if not extracted_links:
 			ctk.CTkLabel(links_frame, text="No links found.", font=self.main_font, text_color="gray").pack()
 		else:
+			counter = 1
 			for link in extracted_links:
-				link_text = f"🔗 {link['text']}"
+				link_text = f"{counter}: 🔗 {link['text']}"
 				link_label = ctk.CTkLabel(links_frame, text=link_text, anchor="w", cursor="hand2", font=self.main_font,
 										  text_color=ACCENT_COLOR)
 				link_label.pack(fill="x", padx=5, pady=2)
@@ -618,6 +638,47 @@ class HunterApp(ctk.CTk):
 				click_handler = partial(self.open_link_in_browser, link['url'])
 				link_label.bind("<Button-1>", click_handler)
 				TkToolTip(links_frame, message=link["url"])
+				counter += 1
+
+	def get_article_image(self, url: str):
+		"""Get the article image from the article URL"""
+		import requests
+		try:
+			def download_and_process_image():
+				import requests
+				try:
+					response = requests.get(url)
+					response.raise_for_status()
+
+					image_data = io.BytesIO(response.content)
+					image = Image.open(image_data)
+					image.thumbnail((200, 200))
+					image_bytes = io.BytesIO()
+					image.save(image_bytes, format='PNG')
+					image.show()
+
+					# Use after() to safely update GUI from background thread
+					encoded = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
+					return "data:image/png;base64," + encoded
+
+				except requests.exceptions.RequestException as e:
+					logger.error(f"Error downloading image: {e}")
+					return None
+				except Image.UnidentifiedImageError:
+					logger.error("Error: The data at the URL is not a valid image.")
+					return None
+
+			# Create and start background thread
+			thread = threading.Thread(target=download_and_process_image)
+			thread.daemon = True
+			thread.start()
+
+			# Return immediately while thread runs
+			return None
+
+		except Image.UnidentifiedImageError:
+			print("Error: The data at the URL is not a valid image.")
+
 
 	@staticmethod
 	def _consume_scroll_event(event):
@@ -625,7 +686,7 @@ class HunterApp(ctk.CTk):
 		return "break"
 
 	@staticmethod
-	def open_link_in_browser(self, url):
+	def open_link_in_browser(url, event=None):
 		logger.info(f"[APP]: Opening external link: {url}")
 		try:
 			webbrowser.open_new_tab(url)

@@ -24,3 +24,4 @@ hunter_model.joblib
 /.vscode/
 /tools/paranormal_terms.txt
 /docs/
+/SQL_script_storage/

@@ -8,6 +8,7 @@ import logging
 import threading
 import inspect
 from pathlib import Path
+from hunter.models import SourceConfig
 
 from sympy.strategies.core import switch
 
@@ -76,16 +77,15 @@ class Dispatcher:
 	def dispatch(self, sources):
 		for source in sources:
 			# Add the source_id to the config dict for this thread
-			source_config = dict(source)
-			source_config['source_id'] = source['id']
+			source_config = SourceConfig(**source)
 
 			thread = threading.Thread(target=self._dispatch_source, args=(source_config,))
-			self.active_threads[source['source_name']] = thread
+			self.active_threads[source_config.source_name] = thread
 			thread.start()
 
-	def _dispatch_source(self, source_config):
-		source_name = source_config.get('source_name')
-		agent_type = source_config.get('agent_type')  # From the VIEW/JOIN
+	def _dispatch_source(self, source_config: SourceConfig):
+		source_name = source_config.source_name
+		agent_type = source_config.agent_type  # From the VIEW/JOIN
 
 		if not all([source_name, agent_type]):
 			logger.error(f"Source is missing required configuration (name or agent_type).")
@@ -103,7 +103,7 @@ class Dispatcher:
 				case 'reddit':
 					credentials = self.config.get_reddit_credentials()
 				case 'gnews_io':
-					credentials = self.config.get_gnews_io_credentials();
+					credentials = self.config.get_gnews_io_credentials()
 
 			raw_leads, bookmark = agent_module.hunt(source_config, credentials)
 

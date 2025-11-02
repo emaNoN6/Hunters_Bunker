@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from . import config_manager
 from hunter.models import LeadData, METADATA_CLASS_MAP
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("DB Manager")
 
 # --- Helper Function for Connections ---
 def get_db_connection():
@@ -33,9 +33,21 @@ def get_db_connection():
 		return None
 
 
-# ==========================================================
-# NEW DATACLASS-COMPLIANT WORKFLOW
-# ==========================================================
+def get_source_id(source_name):
+	"""Fetches the ID of a source by its name."""
+	conn = get_db_connection()
+	if not conn:
+		logger.error("get_source_id: Database connection not available.")
+		return None
+	sql = "SELECT id FROM sources WHERE source_name = %s;"
+	try:
+		with conn.cursor() as cur:
+			cur.execute(sql, (source_name,))
+			result = cur.fetchone()
+			return result[0] if result else None
+	except Exception as e:
+		logger.error(f"Database error in get_source_id: {e}", exc_info=True)
+		if conn: conn.rollback()
 
 def file_new_lead(conn, lead: LeadData, source_id: int) -> uuid.UUID | None:
 	"""
@@ -51,13 +63,14 @@ def file_new_lead(conn, lead: LeadData, source_id: int) -> uuid.UUID | None:
 		# Step 1: Create or update entry in the router for de-duplication.
 		router_sql = """
             INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date, status)
-            VALUES (%s, %s, %s, now(), %s, 'new')
+            VALUES (%s, %s, %s, now(), %s, 'NEW')
             ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
             RETURNING lead_uuid, (xmax = 0) AS inserted;
         """
+		# GIT_NOTE: Uppercase NEW to match enum
 		lead_uuid = uuid.uuid4()
 		with conn.cursor() as cur:
-			cur.execute(router_sql, (lead_uuid, source_id, lead.url, lead.publication_date))
+			cur.execute(router_sql, (str(lead_uuid), source_id, lead.url, lead.publication_date))
 			result = cur.fetchone()
 
 		if not result:

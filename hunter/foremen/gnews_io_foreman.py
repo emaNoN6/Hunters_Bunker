@@ -24,7 +24,7 @@ class GNewsIOForeman:
 	"""
 
 	def __init__(self, source_config):
-		self.source_name = source_config.get('name', 'GNews.io')
+		self.source_name = source_config.source_name
 		logger.info(f"GNews.io Foreman initialized for source: {self.source_name}")
 
 	def translate_leads(self, raw_articles: list[dict]) -> list[LeadData]:
@@ -64,6 +64,8 @@ class GNewsIOForeman:
 		# Step 1: Forge the source-specific metadata object first.
 		source_details = article_data.get('source', {})
 		gnews_metadata = GNewsMetadata(
+				article_url=article_data.get('url'),
+				article_image=article_data.get('image'),
 				source_name=source_details.get('name'),
 				source_url=source_details.get('url')
 		)

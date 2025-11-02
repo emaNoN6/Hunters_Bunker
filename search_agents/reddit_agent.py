@@ -5,19 +5,20 @@
 import praw
 import logging
 from datetime import datetime, timezone
+from hunter.models import SourceConfig
 
 logger = logging.getLogger("Reddit Agent")
 
 
-def hunt(source, credentials):
+def hunt(source: SourceConfig, credentials):
 	"""
 	Hunts a specific subreddit for new posts since the last check.
 	This agent's sole responsibility is to fetch the raw post data.
 	All translation and data formatting is handled by the RedditForeman.
 	"""
-	subreddit_name = source.get('target')
-	last_checked_id = source.get('last_checked_id')
-	source_name = source.get('source_name')
+	subreddit_name = source.target
+	last_checked_id = source.last_known_item_id
+	source_name = source.source_name
 
 	logger.info(f"[{source_name}]: Waking up. Hunting r/{subreddit_name}...")
 

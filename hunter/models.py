@@ -35,6 +35,9 @@ class GNewsMetadata:
 	"""A validated container for GNews.io-specific metadata."""
 	# GNews.io provides a 'source' object with its own details.
 	# We capture them here to maintain a complete record.
+	# Including a link to the original article, and an image URL.
+	article_url: Optional[str] = None
+	article_image: Optional[str] = None
 	source_name: Optional[str] = None
 	source_url: Optional[str] = None
 
@@ -92,6 +95,30 @@ class LeadData:
 			raise ValueError("LeadData must have either 'text' or 'html' content.")
 
 
+@dataclass
+class SourceConfig:
+	"""Configuration and state for a content source."""
+	# === Identity ===
+	id: int  # Database PK from sources table
+	source_name: str
+	agent_type: str
+	target: str
+	domain_id: int
+	purpose: str
+
+	# === State Tracking ===
+	is_active: bool
+	consecutive_failures: int
+	last_checked_date: Optional[datetime] = None
+	last_success_date: Optional[datetime] = None
+	last_failure_date: Optional[datetime] = None
+	last_known_item_id: Optional[str] = None
+
+	# === Configuration ===
+	strategy: Optional[str] = None
+	keywords: Optional[str] = None
+	next_release_date: Optional[datetime] = None
+	has_standard_foreman: bool = True
 # ==========================================================
 # METADATA REHYDRATION MAP
 # This is the crucial directory that allows the db_manager to

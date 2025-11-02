@@ -5,6 +5,7 @@
 
 import logging
 from hunter.models import LeadData
+from hunter import db_manager
 
 logger = logging.getLogger("Filing Clerk")
 
@@ -17,8 +18,8 @@ class FilingClerk:
 	It is the final checkpoint in the data acquisition pipeline.
 	"""
 
-	def __init__(self, db_manager):
-		self.db_manager = db_manager
+	def __init__(self, db_conn):
+		self.db_conn = db_conn
 		logger.info("Filing Clerk is on duty.")
 
 	def file_leads(self, leads: list[LeadData]):
@@ -36,24 +37,17 @@ class FilingClerk:
 		filed_count = 0
 		for lead in leads:
 			try:
+
+				source_id = db_manager.get_source_id(lead.source_name)
+				lead_uuid = db_manager.file_new_lead(self.db_conn, lead, source_id)
 				# The Filing Clerk unpacks the pristine LeadData object and
 				# passes its contents to the db_manager for storage.
 				# This now includes the 'metadata' field.
-				lead_uuid = self.db_manager.add_acquisition(
-						source_name=lead.source_name,
-						url=lead.url,
-						title=lead.title,
-						publication_date=lead.publication_date,
-						text_content=lead.text,
-						html_content=lead.html,
-						image_url=lead.image_url,
-						metadata=lead.metadata  # Pass the metadata dictionary
-				)
 
 				if lead_uuid:
 					# A good practice is to update the object with its new ID
 					# in case it's needed immediately by another process.
-					lead.lead_uuid = lead_uuid
+					lead.lead_uuid = str(lead_uuid)
 					logger.info(f"Filed new lead {lead.lead_uuid}: {lead.title}")
 					filed_count += 1
 				else:

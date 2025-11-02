@@ -5,19 +5,21 @@
 
 import requests
 from datetime import datetime, timezone, timedelta
+from hunter.models import SourceConfig
 import logging
 logger = logging.getLogger("GnewsIO Agent")
 
-def hunt(source, credentials):
+
+def hunt(source: SourceConfig, credentials):
 	"""
 	Hunts GNews.io for new articles.
 	This agent is a "dumb scout". Its only job is to fetch the raw data
 	and return it. The foreman is responsible for all translation.
 	"""
-	query = source.get('target')
+	query = source.target
 	# The db_manager provides last_checked as a datetime object
-	last_checked = source.get('last_checked')
-	source_name = source.get('name')
+	last_checked = source.last_checked_date
+	source_name = source.source_name
 
 	logger.info(f"[{source_name}]: Waking up. Hunting for '{query}'...")
 

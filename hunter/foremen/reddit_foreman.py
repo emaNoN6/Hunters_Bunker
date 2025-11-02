@@ -22,7 +22,7 @@ class RedditForeman:
 	"""
 
 	def __init__(self, source_config):
-		self.source_name = source_config.get('name', 'Reddit')
+		self.source_name = source_config.source_name
 		logger.info(f"Reddit Foreman initialized for source: {self.source_name}")
 
 	def translate_leads(self, raw_posts: list[dict]) -> list[LeadData]:
