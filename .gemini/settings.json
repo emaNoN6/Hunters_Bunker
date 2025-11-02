@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "./toolbox.exe",
+      "args": [
+        "--prebuilt",
+        "postgres",
+        "--stdio"
+      ],
+      "env": {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_DATABASE": "Hunters_Almanac",
+        "POSTGRES_USER": "hunter_app_user",
+        "POSTGRES_PASSWORD": "Hunter App Password."
+      }
+    }
+  }
+}
