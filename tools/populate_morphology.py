@@ -187,6 +187,17 @@ def generate_conjugations(dry_run=False):
 		# Generate verb conjugations
 		if is_verb:
 			try:
+				# Add simple past tense generation:
+				if base_term.endswith('e'):
+					past_tense = base_term + 'd'
+				elif base_term.endswith('y') and base_term[-2] not in 'aeiou':
+					past_tense = base_term[:-1] + 'ied'  # cry → cried
+				else:
+					past_tense = base_term + 'ed'
+				if past_tense and past_tense != base_term and ' ' not in past_tense:
+					db_admin.store_derivation(base_term, past_tense, source='simple_past')
+					conjugations_added += 1
+
 				# Third person singular (e.g., possess → possesses)
 				plural_verb = p.plural_verb(base_term)
 				if plural_verb and plural_verb != base_term:
