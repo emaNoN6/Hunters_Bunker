@@ -7,8 +7,7 @@
 import argparse
 import sys
 import requests
-import inflect
-
+from pyinflect import getAllInflections
 # --- Centralized Pathing ---
 from hunter.utils.path_utils import setup_project_path
 
@@ -148,7 +147,7 @@ def generate_conjugations(dry_run=False):
 	"""Second pass: generate verb/noun conjugations using inflect"""
 	print("\n=== PASS 2: Generating Conjugations ===")
 
-	p = inflect.engine()
+	# p = inflect.engine()
 	terms = db_manager.get_all_search_terms()
 
 	if not terms:
@@ -163,64 +162,20 @@ def generate_conjugations(dry_run=False):
 		base_term = term_data['base_term']
 		api_response = term_data['api_response']
 
-		# Determine part of speech from API response
-		is_verb = False
-		is_noun = False
-
-		for result in api_response.get('results', []):
-			pos = (result.get('partOfSpeech') or '').lower()
-			if pos == 'verb':
-				is_verb = True
-			if pos == 'noun':
-				is_noun = True
-
-		if not is_verb and not is_noun:
-			continue
-
 		if dry_run:
-			if is_verb:
-				print(f"  [DRY RUN] Would add verb conjugations for '{base_term}'")
-			if is_noun:
-				print(f"  [DRY RUN] Would add plural for '{base_term}'")
+			print(f"  [DRY RUN] Would add inflections for '{base_term}'")
 			continue
 
-		# Generate verb conjugations
-		if is_verb:
-			try:
-				# Add simple past tense generation:
-				if base_term.endswith('e'):
-					past_tense = base_term + 'd'
-				elif base_term.endswith('y') and base_term[-2] not in 'aeiou':
-					past_tense = base_term[:-1] + 'ied'  # cry → cried
-				else:
-					past_tense = base_term + 'ed'
-				if past_tense and past_tense != base_term and ' ' not in past_tense:
-					db_admin.store_derivation(base_term, past_tense, source='simple_past')
-					conjugations_added += 1
+		all_terms = set()
+		inflections = getAllInflections(base_term)
+		if inflections:
+			for tag, forms in inflections.items():
+				all_terms.update(forms)
+		all_terms.discard(base_term)
 
-				# Third person singular (e.g., possess → possesses)
-				plural_verb = p.plural_verb(base_term)
-				if plural_verb and plural_verb != base_term:
-					db_admin.store_derivation(base_term, plural_verb, source='inflect')
-					conjugations_added += 1
-
-				# Present participle (e.g., possess → possessing)
-				present_part = p.present_participle(base_term)
-				if present_part and present_part != base_term:
-					db_admin.store_derivation(base_term, present_part, source='inflect')
-					conjugations_added += 1
-			except Exception as e:
-				print(f"  ⚠️  Error conjugating verb '{base_term}': {e}")
-
-		# Generate noun plural
-		if is_noun:
-			try:
-				plural = p.plural(base_term)
-				if plural and plural != base_term:
-					db_admin.store_derivation(base_term, plural, source='inflect')
-					conjugations_added += 1
-			except Exception as e:
-				print(f"  ⚠️  Error pluralizing '{base_term}': {e}")
+		for term in all_terms:
+			db_admin.store_derivation(base_term, term, source='pyinflect')
+			conjugations_added += 1
 
 	print(f"✓ Added {conjugations_added} conjugations via inflect")
 
