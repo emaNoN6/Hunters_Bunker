@@ -18,7 +18,6 @@ from datetime import datetime
 from PIL import Image
 import tkinterweb
 from functools import partial
-from hunter import dispatcher
 import tkinter as tk
 from tkinter import ttk
 
@@ -28,7 +27,6 @@ from hunter import db_manager
 from hunter.custom_widgets.tooltip import TkToolTip
 from hunter.html_parsers import html_sanitizer, link_extractor
 from hunter.utils import logger_setup
-# --- SURGICAL CHANGE: Import new Dispatcher class and data contracts ---
 from hunter.dispatcher import Dispatcher
 from hunter.models import LeadData
 
@@ -79,6 +77,20 @@ def _is_scrolled_to_bottom(textbox):
 	return float(textbox.yview()[0]) >= 0.999
 
 
+def file_for_retraining(lead_data):
+	project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	not_case_dir = os.path.join(project_root, "data", "training_data", "not_a_case")
+	os.makedirs(not_case_dir, exist_ok=True)
+	safe_title = re.sub(r"[^\w\s-]", "", lead_data["title"]).replace(" ", "_")[:100]
+	filepath = os.path.join(not_case_dir, f"{safe_title}.txt")
+	try:
+		with open(filepath, "w", encoding="utf-8") as f:
+			f.write(lead_data.get("full_text", ""))
+		logger.info(f"[SAVE SUCCESS]: Saved retraining file: {os.path.basename(filepath)}")
+	except Exception as e:
+		logger.error(f"[SAVE ERROR]: Could not save retraining file: {e}")
+
+
 class HunterApp(ctk.CTk):
 	def __init__(self):
 		super().__init__()
@@ -100,7 +112,6 @@ class HunterApp(ctk.CTk):
 			error_label.pack(expand=True)
 			return
 
-		# --- SURGICAL CHANGE: Centralized DB Connection and Component Init ---
 		self.db_conn = None
 		self.dispatcher = None
 		self.config = config_manager  # Assuming module-level access
@@ -136,7 +147,6 @@ class HunterApp(ctk.CTk):
 
 		self.after(200, self.refresh_triage_list)
 
-	# --- SURGICAL CHANGE: New centralized init function ---
 	def _init_db_and_components(self):
 		"""Initializes DB connection and all dependent components."""
 		self.db_conn = db_manager.get_db_connection()
@@ -340,12 +350,6 @@ class HunterApp(ctk.CTk):
 
 		self.log_textbox.configure(state="disabled")
 
-	def start_search_thread(self):
-		logger.info("[APP]: Hunter dispatch requested...")
-		self.search_button.configure(state="disabled")
-		threading.Thread(target=self.dispatch_hunt(), daemon=True).start()
-
-	# --- SURGICAL CHANGE: Re-wired hunt process to use the new Dispatcher ---
 	def start_hunt(self):
 		"""Initiates a hunt in a background thread."""
 		logger.info("[APP]: Hunter dispatch requested...")
@@ -376,28 +380,6 @@ class HunterApp(ctk.CTk):
 			logger.info("[APP]: Hunt thread has completed.")
 			self.search_button.configure(state="normal", text="Search for New Cases")
 			self.refresh_triage_list()
-
-	def dispatch_hunt(self):
-		"""
-		Kicks off a new intel-gathering hunt in a background thread.
-		This replaces the old 'run_search'.
-		"""
-		self.search_button.configure(state="disabled")
-		logger.info("[APP]: Dispatcher activated. Hunting for new intel...")
-
-		# Run the hunt in a separate thread to keep the GUI responsive
-		hunt_thread = threading.Thread(target=self._hunt_thread_worker)
-		hunt_thread.start()
-
-	def _hunt_thread_worker(self):
-		"""The actual work of the hunt, run in a background thread."""
-		# Call our new, definitive dispatcher
-		dispatcher.run_hunt()
-
-		# When the hunt is done, safely tell the main GUI thread to refresh the list
-		self.after(0, self.refresh_triage_list)
-		self.after(0, lambda: self.search_button.configure(state="normal"))
-		logger.info("[APP]: Dispatcher has completed all hunts.")
 
 	def refresh_triage_list(self):
 		"""
@@ -465,7 +447,7 @@ class HunterApp(ctk.CTk):
 		logger.info(f"[APP]: Triage list updated with {len(leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
-		start_time = time.perf_counter();
+		start_time = time.perf_counter()
 		header_label = header.winfo_children()[0]
 		if header._is_expanded:
 			content_frame.pack_forget()
@@ -541,19 +523,6 @@ class HunterApp(ctk.CTk):
 
 		logger.info(f"[APP]: Processed {processed_count} leads. Refreshing list...")
 		self.refresh_triage_list()
-
-	def file_for_retraining(self, lead_data):
-		project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-		not_case_dir = os.path.join(project_root, "data", "training_data", "not_a_case")
-		os.makedirs(not_case_dir, exist_ok=True)
-		safe_title = re.sub(r"[^\w\s-]", "", lead_data["title"]).replace(" ", "_")[:100]
-		filepath = os.path.join(not_case_dir, f"{safe_title}.txt")
-		try:
-			with open(filepath, "w", encoding="utf-8") as f:
-				f.write(lead_data.get("full_text", ""))
-			logger.info(f"[SAVE SUCCESS]: Saved retraining file: {os.path.basename(filepath)}")
-		except Exception as e:
-			logger.error(f"[SAVE ERROR]: Could not save retraining file: {e}")
 
 	def display_lead_detail(self, lead_data: LeadData):
 		for widget in self.detail_frame.winfo_children(): widget.destroy()
@@ -752,7 +721,6 @@ class HunterApp(ctk.CTk):
 			logger.info("[APP SUCCESS]: All system tasks are complete.")
 
 	def on_closing(self):
-		"""SURGICAL CHANGE: Ensure the central connection is closed."""
 		logger.info("Closing database connection and shutting down.")
 		if self.db_conn:
 			self.db_conn.close()
