@@ -18,7 +18,6 @@ from datetime import datetime
 from PIL import Image
 import tkinterweb
 from functools import partial
-import tkinter as tk
 from tkinter import ttk
 
 # --- Our Custom Tools ---

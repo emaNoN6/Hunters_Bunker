@@ -4,7 +4,6 @@
 # ==========================================================
 import praw
 import logging
-from datetime import datetime, timezone
 from hunter.models import SourceConfig
 
 logger = logging.getLogger("Reddit Agent")
@@ -66,6 +65,8 @@ def hunt(source: SourceConfig, credentials):
 				"num_comments": post.num_comments,
 				"is_self":      post.is_self,
 				"selftext":     post.selftext,
+				"selftext_html": post.selftext_html,
+				"media":         post.media if hasattr(post, 'media') else None,
 			})
 
 		# The newest post is the first one in the list returned by .new()

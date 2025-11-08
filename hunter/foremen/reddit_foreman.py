@@ -57,6 +57,23 @@ class RedditForeman:
 				post_id=post_data.get('id'),
 				is_self=post_data.get('is_self')
 		)
+		media_url = None
+		media_type = None
+		media_duration = None
+
+		if post_data.get('media'):
+			media = post_data.get('media')
+			media_url = media.get('fallback_url')
+			media_duration = media.get('duration')
+
+			if media.get('is_gif'):
+				media_type = 'gif'
+			elif media_url:
+				media_type = 'video'
+
+			reddit_metadata.media_url = media_url
+			reddit_metadata.media_type = media_type
+			reddit_metadata.media_duration = media_duration
 
 		# Step 2: Parse the publication date. Reddit provides a UTC timestamp.
 		try:

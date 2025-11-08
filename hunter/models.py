@@ -28,6 +28,9 @@ class RedditMetadata:
 	num_comments: Optional[int] = None
 	post_id: Optional[str] = None
 	is_self: Optional[bool] = None  # Indicates if a post is a text-only "self" post.
+	media_url: Optional[str] = None
+	media_type: Optional[str] = None
+	media_duration: Optional[int] = None
 
 
 @dataclass
