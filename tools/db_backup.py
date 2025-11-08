@@ -54,7 +54,7 @@ def run_backup():
     logging.info("[BACKUP AGENT]: Beginning database backup operation...")
 
     # --- Get Credentials ---
-    creds = config_manager.get_pgsql_credentials()
+    creds = config_manager.get_pgsql_admin_credentials()
     if not creds:
         logging.error(
             "[BACKUP ERROR]: Could not read PostgreSQL credentials from config.ini. Aborting."
@@ -86,6 +86,9 @@ def run_backup():
         creds["dbname"],
         "--clean",
         "--if-exists",
+	    "--exclude-schema=cron",
+	    "--exclude-schema=partman",
+	    "--exclude-schema=public",
     ]
 
     # --- Execute the Backup ---
