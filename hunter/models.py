@@ -27,6 +27,7 @@ class RedditMetadata:
 	subreddit: Optional[str] = None
 	num_comments: Optional[int] = None
 	post_id: Optional[str] = None
+	flair: Optional[str] = None
 	is_self: Optional[bool] = None  # Indicates if a post is a text-only "self" post.
 	media_url: Optional[str] = None
 	media_type: Optional[str] = None

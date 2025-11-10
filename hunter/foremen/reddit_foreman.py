@@ -55,14 +55,15 @@ class RedditForeman:
 				subreddit=post_data.get('subreddit'),
 				num_comments=post_data.get('num_comments'),
 				post_id=post_data.get('id'),
-				is_self=post_data.get('is_self')
+				is_self=post_data.get('is_self'),
+				flair=post_data.get('flair')
 		)
 		media_url = None
 		media_type = None
 		media_duration = None
 
-		if post_data.get('media'):
-			media = post_data.get('media')
+		if post_data.get('media') and post_data.get('media').get('reddit_video'):
+			media = post_data.get('media').get('reddit_video')
 			media_url = media.get('fallback_url')
 			media_duration = media.get('duration')
 

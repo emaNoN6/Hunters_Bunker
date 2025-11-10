@@ -4,6 +4,7 @@
 # ==========================================================
 import praw
 import logging
+import pprint
 from hunter.models import SourceConfig
 
 logger = logging.getLogger("Reddit Agent")
@@ -54,6 +55,7 @@ def hunt(source: SourceConfig, credentials):
 		# The foreman is responsible for turning this into a LeadData object.
 		raw_leads = []
 		for post in new_posts:
+			pprint.pprint(post.__dict__)
 			raw_leads.append({
 				"title":        post.title,
 				"url":          post.url,
@@ -66,7 +68,8 @@ def hunt(source: SourceConfig, credentials):
 				"is_self":      post.is_self,
 				"selftext":     post.selftext,
 				"selftext_html": post.selftext_html,
-				"media":         post.media if hasattr(post, 'media') else None,
+				"media": post.media if hasattr(post, 'media') else None,
+				"flair": post.link_flair_text
 			})
 
 		# The newest post is the first one in the list returned by .new()
