@@ -25,3 +25,4 @@ hunter_model.joblib
 /tools/paranormal_terms.txt
 /docs/
 /SQL_script_storage/
+*.jpg

@@ -28,6 +28,7 @@ from hunter.html_parsers import html_sanitizer, link_extractor
 from hunter.utils import logger_setup
 from hunter.dispatcher import Dispatcher
 from hunter.models import LeadData
+from hunter.media_handlers import video_player
 
 log_queue = logger_setup.setup_logging()
 
@@ -120,7 +121,6 @@ class HunterApp(ctk.CTk):
 		if not self._init_db_and_components():
 			self.after(100, self.destroy)
 			return
-		# --- END CHANGE ---
 
 		# --- Main Layout ---
 		self.grid_columnconfigure(0, weight=2)
@@ -589,6 +589,15 @@ class HunterApp(ctk.CTk):
 				if image:
 					images.append({'text': 'Article Image', 'url': image})
 
+			if metadata.__contains__('media_url'):
+				media_url = metadata.get('media_url')
+				media_type = metadata.get('media_type', 'video')
+				duration = metadata.get('media_duration', 0)
+
+				# Add to links with duration if available
+				label = f"{media_type.title()} ({duration}s)" if duration else media_type.title()
+				extracted_links.append({'text': label, 'url': media_url, 'type': 'video'})
+
 		if lead_data.url is not None:
 			extracted_links.append({'text': 'Article URL', 'url': lead_data.url})
 
@@ -603,11 +612,31 @@ class HunterApp(ctk.CTk):
 				link_label.pack(fill="x", padx=5, pady=2)
 				# Instead of a lambda, we use functools.partial to create a clean,
 				# stable callback function that correctly captures the URL.
-				click_handler = partial(self.open_link_in_browser, link['url'])
+				if link.get('type') == 'video':
+					# Use the existing wrapper function with partial
+					click_handler = partial(self.play_video, link['url'])
+				else:
+					click_handler = partial(self.open_link_in_browser, link['url'])
 				link_label.bind("<Button-1>", click_handler)
 				TkToolTip(links_frame, message=link["url"])
 				counter += 1
 
+	def play_video(self, video_url: str, event=None):
+		"""Play video in a background thread to avoid blocking the GUI"""
+
+		def play_in_thread():
+			try:
+				from hunter.media_handlers.video_player import VideoPlayer
+				player = VideoPlayer(video_url)
+				player.play()
+			except Exception as e:
+				logger.error(f"[VIDEO ERROR]: Failed to play video: {e}")
+
+		thread = threading.Thread(target=play_in_thread, daemon=True)
+		thread.start()
+		logger.info(f"[APP]: Playing video: {video_url}")
+
+	@staticmethod
 	def get_article_image(self, url: str):
 		"""Get the article image from the article URL"""
 		import requests

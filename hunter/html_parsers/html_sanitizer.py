@@ -15,7 +15,7 @@ from .. import config_manager # Use relative import to get the config
 
 # --- GUI Configuration ---
 GUI_CONFIG = config_manager.get_gui_config()
-FONT_FAMILY = GUI_CONFIG.get('font_family', 'Courier New')
+FONT_FAMILY = GUI_CONFIG.get('html_font_family', 'Courier New')
 HTML_FONT_SIZE = int(GUI_CONFIG.get('html_font_size_pt', 24))
 DARK_GRAY = GUI_CONFIG.get('dark_gray', '#2b2b2b')
 TEXT_COLOR = GUI_CONFIG.get('text_color', '#E0E0E0')
