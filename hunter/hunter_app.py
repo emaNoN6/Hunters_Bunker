@@ -589,10 +589,11 @@ class HunterApp(ctk.CTk):
 				if image:
 					images.append({'text': 'Article Image', 'url': image})
 
-			if metadata.__contains__('media_url'):
-				media_url = metadata.get('media_url')
-				media_type = metadata.get('media_type', 'video')
-				duration = metadata.get('media_duration', 0)
+			if metadata.__contains__('media'):
+				media = metadata.get('media')
+				media_url = media.get('url')
+				media_type = media.get('type', 'video')
+				duration = media.get('duration', 0)
 
 				# Add to links with duration if available
 				label = f"{media_type.title()} ({duration}s)" if duration else media_type.title()

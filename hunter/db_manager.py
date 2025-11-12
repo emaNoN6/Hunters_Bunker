@@ -140,12 +140,30 @@ def get_unprocessed_leads(conn) -> list[LeadData]:
 					if raw_metadata:
 						MetadataClass = METADATA_CLASS_MAP.get(row['source_name'])
 						if MetadataClass:
-							metadata_obj = MetadataClass(**raw_metadata)
+							# Remove 'media' field before creating dataclass
+							metadata_for_class = {k: v for k, v in raw_metadata.items() if
+							                      k != 'media' and k != 'flair'}
+							metadata_obj = MetadataClass(**metadata_for_class)
+
+							# Add media back to the dict if it exists
+							metadata_dict = metadata_obj.__dict__
+							if 'media' in raw_metadata:
+								metadata_dict['media'] = raw_metadata['media']
+							if 'flair' in raw_metadata:
+								metadata_dict['flair'] = raw_metadata['flair']
+						else:
+							metadata_dict = raw_metadata
+					else:
+						metadata_dict = {}
 
 					lead = LeadData(
-							title=row['title'], url=row['item_url'], source_name=row['source_name'],
-							publication_date=row['publication_date'], text=row['full_text'],
-							html=row['full_html'], metadata=metadata_obj.__dict__ if metadata_obj else {},
+							title=row['title'],
+							url=row['item_url'],
+							source_name=row['source_name'],
+							publication_date=row['publication_date'],
+							text=row['full_text'],
+							html=row['full_html'],
+							metadata=metadata_dict,  # Use the dict, not metadata_obj.__dict__
 							lead_uuid=str(row['lead_uuid'])
 					)
 					leads.append(lead)

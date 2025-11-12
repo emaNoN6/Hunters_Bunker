@@ -20,6 +20,13 @@ from typing import Optional, Any, Dict
 # ==========================================================
 
 @dataclass
+class RedditMedia:
+	"""A validated container for Reddit-specific media information."""
+	url: Optional[str] = None
+	type: Optional[str] = None
+	duration: Optional[int] = None
+
+@dataclass
 class RedditMetadata:
 	"""A validated container for Reddit-specific metadata."""
 	score: Optional[int] = None
@@ -27,12 +34,7 @@ class RedditMetadata:
 	subreddit: Optional[str] = None
 	num_comments: Optional[int] = None
 	post_id: Optional[str] = None
-	flair: Optional[str] = None
 	is_self: Optional[bool] = None  # Indicates if a post is a text-only "self" post.
-	media_url: Optional[str] = None
-	media_type: Optional[str] = None
-	media_duration: Optional[int] = None
-
 
 @dataclass
 class GNewsMetadata:
