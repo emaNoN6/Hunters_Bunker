@@ -55,8 +55,7 @@ def hunt(source: SourceConfig, credentials):
 		# The foreman is responsible for turning this into a LeadData object.
 		raw_leads = []
 		for post in new_posts:
-			pprint.pprint(post.__dict__)
-			raw_leads.append({
+			lead = {
 				"title":        post.title,
 				"url":          post.url,
 				"id":           post.id,
@@ -68,10 +67,22 @@ def hunt(source: SourceConfig, credentials):
 				"is_self":      post.is_self,
 				"selftext":     post.selftext,
 				"selftext_html": post.selftext_html,
-				"media": post.media if hasattr(post, 'media') else None,
-				"flair": post.link_flair_text
-			})
+				"flair":        post.link_flair_text,
+			}
 
+			# Only add media if it's present
+			if post.media and "reddit_video" in post.media:
+				rv = post.media["reddit_video"]
+				lead["media_url"] = rv.get("fallback_url")
+				if rv.get("is_gif"):
+					lead["media_type"] = "gif"
+				elif rv.get("fallback_url"):
+					lead["media_type"] = "video"
+				else:
+					lead["media_type"] = None
+				lead["media_duration"] = rv.get("duration")
+
+			raw_leads.append(lead)
 		# The newest post is the first one in the list returned by .new()
 		newest_id = new_posts[0].id
 

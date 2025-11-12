@@ -5,9 +5,10 @@
 
 import logging
 from datetime import datetime, timezone
+from dataclasses import asdict
 
 # Import our new, standardized data contracts
-from hunter.models import LeadData, RedditMetadata
+from hunter.models import LeadData, RedditMetadata, RedditMedia
 
 logger = logging.getLogger('Reddit Foreman')
 
@@ -55,26 +56,21 @@ class RedditForeman:
 				subreddit=post_data.get('subreddit'),
 				num_comments=post_data.get('num_comments'),
 				post_id=post_data.get('id'),
-				is_self=post_data.get('is_self'),
-				flair=post_data.get('flair')
+				is_self=post_data.get('is_self')
 		)
-		media_url = None
-		media_type = None
-		media_duration = None
 
-		if post_data.get('media') and post_data.get('media').get('reddit_video'):
-			media = post_data.get('media').get('reddit_video')
-			media_url = media.get('fallback_url')
-			media_duration = media.get('duration')
+		metadata_asdict = reddit_metadata.__dict__
 
-			if media.get('is_gif'):
-				media_type = 'gif'
-			elif media_url:
-				media_type = 'video'
+		if (flair := post_data.get('flair')) is not None:
+			metadata_asdict['flair'] = flair
 
-			reddit_metadata.media_url = media_url
-			reddit_metadata.media_type = media_type
-			reddit_metadata.media_duration = media_duration
+		if post_data.get('media_url'):
+			reddit_media = RedditMedia(
+					url=post_data.get('media_url'),
+					duration=post_data.get('media_duration'),
+					type=post_data.get('media_type')
+			)
+			metadata_asdict['media'] = reddit_media.__dict__
 
 		# Step 2: Parse the publication date. Reddit provides a UTC timestamp.
 		try:
@@ -97,7 +93,7 @@ class RedditForeman:
 				image_url=post_data.get('thumbnail') if post_data.get('thumbnail') not in ['self', 'default',
 				                                                                           ''] else post_data.get(
 					'url'),
-				metadata=reddit_metadata.__dict__
+				metadata=metadata_asdict
 		)
 
 		return lead
