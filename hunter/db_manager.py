@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 # --- Our Tools ---
 from . import config_manager
-from hunter.models import LeadData, METADATA_CLASS_MAP
+from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS
 
 logger = logging.getLogger("DB Manager")
 
@@ -140,17 +140,19 @@ def get_unprocessed_leads(conn) -> list[LeadData]:
 					if raw_metadata:
 						MetadataClass = METADATA_CLASS_MAP.get(row['source_name'])
 						if MetadataClass:
-							# Remove 'media' field before creating dataclass
-							metadata_for_class = {k: v for k, v in raw_metadata.items() if
-							                      k != 'media' and k != 'flair'}
+							# Get list of extra fields for this source
+							extra_fields = METADATA_EXTRA_FIELDS.get(row['source_name'], [])
+
+							# Split metadata into dataclass fields and extra fields
+							metadata_for_class = {k: v for k, v in raw_metadata.items() if k not in extra_fields}
+							extra_data = {k: v for k, v in raw_metadata.items() if k in extra_fields}
+
+							# Create dataclass
 							metadata_obj = MetadataClass(**metadata_for_class)
 
-							# Add media back to the dict if it exists
+							# Merge back together
 							metadata_dict = metadata_obj.__dict__
-							if 'media' in raw_metadata:
-								metadata_dict['media'] = raw_metadata['media']
-							if 'flair' in raw_metadata:
-								metadata_dict['flair'] = raw_metadata['flair']
+							metadata_dict.update(extra_data)
 						else:
 							metadata_dict = raw_metadata
 					else:

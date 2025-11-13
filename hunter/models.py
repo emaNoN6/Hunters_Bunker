@@ -138,3 +138,10 @@ METADATA_CLASS_MAP = {
 	'Reddit Paranormal': RedditMetadata,
 	# Add new source names and their corresponding metadata classes here
 }
+
+# Extra fields that should only appear if populated.
+METADATA_EXTRA_FIELDS = {
+	'Reddit Ghosts':     ['flair', 'media'],
+	'Reddit Paranormal': ['flair', 'media'],
+	# Other sources probably don't have extra fields
+}
