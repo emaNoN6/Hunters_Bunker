@@ -61,6 +61,9 @@ class VideoPlayer:
 		frame = None
 
 		cv2.namedWindow('Video', flags=cv2.WINDOW_GUI_NORMAL | cv2.WINDOW_AUTOSIZE)
+		total_frames = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+		cv2.createTrackbar('Progress', 'Video', 0, total_frames, lambda x: None)
+
 		while self.video.isOpened():
 			if not paused:
 				success, frame = self.video.read()
@@ -73,6 +76,18 @@ class VideoPlayer:
 			if display_frame is not None:
 				# Always show status
 				frame_num = int(self.video.get(cv2.CAP_PROP_POS_FRAMES))
+				# Check if user moved trackbar before updating it
+				new_pos = cv2.getTrackbarPos('Progress', 'Video')
+				if abs(new_pos - frame_num) > 1:  # User moved it
+					self.video.set(cv2.CAP_PROP_POS_FRAMES, new_pos)
+					success, frame = self.video.read()
+					if success:
+						display_frame = frame.copy()
+					frame_num = new_pos
+				else:
+					# Update trackbar to current position
+					cv2.setTrackbarPos('Progress', 'Video', frame_num)
+
 				status = "PAUSED" if paused else "PLAYING"
 				cv2.putText(display_frame, f"{status} | Frame: {frame_num}",
 				            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
