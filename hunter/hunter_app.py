@@ -96,6 +96,7 @@ class HunterApp(ctk.CTk):
 		super().__init__()
 
 		# --- Window Setup ---
+		self.hunt_event = None
 		self.title("Hunter's Command Console")
 		self.geometry("800x600+100+100")
 		self.configure(fg_color=DARK_BG)
@@ -362,21 +363,14 @@ class HunterApp(ctk.CTk):
 			return
 
 		# Run the dispatcher's 'dispatch' method in a separate thread
-		hunt_thread = threading.Thread(
-				target=self.dispatcher.dispatch,
-				args=(sources_to_hunt,)
-		)
-		hunt_thread.daemon = True
-		hunt_thread.start()
+		self.hunt_event = self.dispatcher.dispatch(sources_to_hunt)  # Store the event
+		self.after(1000, self._check_hunt_status)  # Start polling
 
-		self.after(100, self._check_hunt_status, hunt_thread)
-
-	def _check_hunt_status(self, thread):
-		"""Polls the hunt thread and refreshes the GUI when complete."""
-		if thread.is_alive():
-			self.after(1000, self._check_hunt_status, thread)
+	def _check_hunt_status(self):
+		if not self.hunt_event.is_set():
+			self.after(1000, self._check_hunt_status)
 		else:
-			logger.info("[APP]: Hunt thread has completed.")
+			logger.info("[APP]: All hunt threads completed.")
 			self.search_button.configure(state="normal", text="Search for New Cases")
 			self.refresh_triage_list()
 

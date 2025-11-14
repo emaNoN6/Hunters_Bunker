@@ -75,13 +75,25 @@ class Dispatcher:
 		self.foreman_map = _build_foreman_map(self.db_conn)
 
 	def dispatch(self, sources):
-		for source in sources:
-			# Add the source_id to the config dict for this thread
-			source_config = SourceConfig(**source)
+		threads = []
+		self.all_threads_done = threading.Event()  # Create event flag
 
+		for source in sources:
+			source_config = SourceConfig(**source)
 			thread = threading.Thread(target=self._dispatch_source, args=(source_config,))
 			self.active_threads[source_config.source_name] = thread
+			threads.append(thread)
 			thread.start()
+
+		# Start a watcher thread that sets the event when all workers finish
+		def wait_for_all():
+			for thread_loop in threads:
+				thread_loop.join()
+			self.all_threads_done.set()  # Signal that all threads are done
+
+		watcher = threading.Thread(target=wait_for_all)
+		watcher.start()
+		return self.all_threads_done
 
 	def _dispatch_source(self, source_config: SourceConfig):
 		source_name = source_config.source_name
