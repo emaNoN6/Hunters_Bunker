@@ -80,7 +80,15 @@ def hunt(source: SourceConfig, credentials):
 					lead["media_type"] = "video"
 				else:
 					lead["media_type"] = None
-				lead["media_duration"] = rv.get("duration")
+				lead["media_duration"] = rv.get("duration") or None
+
+			elif post.is_reddit_media_domain:
+				if post.url.endswith(('jpg', 'jpeg', 'png', 'webp')):
+					lead["media_url"] = post.url
+					lead["media_type"] = "image"
+					logger.debug(f"reddit media post url: {post.url}")
+					if lead.get('selftext') is None or len(lead['selftext']) == 0:
+						lead['selftext'] = "[Image Only]"
 
 			raw_leads.append(lead)
 		# The newest post is the first one in the list returned by .new()

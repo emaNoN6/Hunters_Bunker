@@ -28,7 +28,6 @@ from hunter.html_parsers import html_sanitizer, link_extractor
 from hunter.utils import logger_setup
 from hunter.dispatcher import Dispatcher
 from hunter.models import LeadData
-from hunter.media_handlers import video_player
 
 log_queue = logger_setup.setup_logging()
 
@@ -389,12 +388,10 @@ class HunterApp(ctk.CTk):
 			self.triage_tree.delete(item)
 		self.tree_lead_data = {}
 		clear_time = time.perf_counter()
-		logger.info(f"[TIMING]: Tree cleanup took {clear_time - start_time:.3f}s")
 
 		# Fetch leads from database (returns list[LeadData])
 		leads = db_manager.get_unprocessed_leads(self.db_conn)
 		fetch_time = time.perf_counter()
-		logger.info(f"[TIMING]: DB fetch took {fetch_time - clear_time:.3f}s for {len(leads)} leads")
 
 		if not leads:
 			logger.info("[APP]: No leads found for triage.")
@@ -434,9 +431,6 @@ class HunterApp(ctk.CTk):
 				# Store full lead data object
 				self.tree_lead_data[lead_id] = lead
 
-		render_time = time.perf_counter()
-		logger.info(f"[TIMING]: Tree population took {render_time - fetch_time:.3f}s")
-		logger.info(f"[TIMING]: TOTAL refresh took {render_time - start_time:.3f}s")
 		logger.info(f"[APP]: Triage list updated with {len(leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
@@ -576,7 +570,7 @@ class HunterApp(ctk.CTk):
 			metadata = lead_data.metadata
 			if metadata.__contains__('article_url'):
 				metadata_link = metadata.get('article_url')
-				extracted_links.append({'text': metadata.get('title'), 'url': metadata_link})
+				extracted_links.append({'text': '🔗 ' + metadata.get('title'), 'url': metadata_link})
 
 			if metadata.__contains__('article_image'):
 				image = self.get_article_image(metadata.get('article_image'))
@@ -586,35 +580,65 @@ class HunterApp(ctk.CTk):
 			if metadata.__contains__('media'):
 				media = metadata.get('media')
 				media_url = media.get('url')
-				media_type = media.get('type', 'video')
+				media_type = media.get('type')
 				duration = media.get('duration', 0)
 
-				# Add to links with duration if available
-				label = f"{media_type.title()} ({duration}s)" if duration else media_type.title()
-				extracted_links.append({'text': label, 'url': media_url, 'type': 'video'})
+				match media_type:
+					case 'video':
+						# Add to links with duration if available
+						label = f"🎞️ {media_type.title()} ({duration}s)" if duration else media_type.title()
+						extracted_links.append({'text': label, 'url': media_url, 'type': 'video'})
+					case 'image':
+						label = f"🖼️ {media_type.title()}"
+						extracted_links.append({'text': label, 'url': media_url, 'type': 'image'})
 
 		if lead_data.url is not None:
-			extracted_links.append({'text': 'Article URL', 'url': lead_data.url})
+			extracted_links.append({'text': '🔗 Article URL', 'url': lead_data.url})
 
 		if not extracted_links:
 			ctk.CTkLabel(links_frame, text="No links found.", font=self.main_font, text_color="gray").pack()
 		else:
 			counter = 1
 			for link in extracted_links:
-				link_text = f"{counter}: 🔗 {link['text']}"
+				link_text = f"{counter:>2d}: {link['text']}"
 				link_label = ctk.CTkLabel(links_frame, text=link_text, anchor="w", cursor="hand2", font=self.main_font,
 										  text_color=ACCENT_COLOR)
 				link_label.pack(fill="x", padx=5, pady=2)
-				# Instead of a lambda, we use functools.partial to create a clean,
-				# stable callback function that correctly captures the URL.
 				if link.get('type') == 'video':
 					# Use the existing wrapper function with partial
 					click_handler = partial(self.play_video, link['url'])
+				elif link.get('type') == 'image':
+					click_handler = partial(self.show_image, link['url'])
 				else:
 					click_handler = partial(self.open_link_in_browser, link['url'])
 				link_label.bind("<Button-1>", click_handler)
 				TkToolTip(links_frame, message=link["url"])
 				counter += 1
+
+	def show_image(self, image_url: str, event=None):
+		"""Show image in a background thread to avoid blocking the GUI"""
+
+		def show_in_thread():
+			try:
+				# Import your ImageViewer class directly
+				# (adjust path if needed)
+				from hunter.media_handlers.image_viewer import ImageViewer
+
+				# Create the instance
+				viewer = ImageViewer(image_url)
+
+				# Run the blocking 'show' method
+				# This call has cv2.waitKey(0) and will pause
+				# *this thread* until the user closes the image.
+				viewer.show()
+
+			except Exception as e:
+				logger.error(f"[IMAGE ERROR]: Failed to show image: {e}")
+
+		# Start the thread, just like you do for the video
+		thread = threading.Thread(target=show_in_thread, daemon=True)
+		thread.start()
+		logger.info(f"[APP]: Showing image: {image_url}")
 
 	def play_video(self, video_url: str, event=None):
 		"""Play video in a background thread to avoid blocking the GUI"""
@@ -728,6 +752,7 @@ class HunterApp(ctk.CTk):
 			self.after_idle(self.process_gui_log_queue)
 		else:
 			self.after(100, self.process_gui_log_queue)
+
 	@staticmethod
 	def _run_startup_checks():
 		logger.info("[APP]: Running startup system checks...")
