@@ -12,6 +12,7 @@ import cv2
 import os
 import logging
 import numpy as np
+from .image_viewer import ImageViewer
 
 loggings = logging.getLogger("Video Player")
 
@@ -159,6 +160,13 @@ class VideoPlayer:
 						except cv2.error as e:
 							pass
 						status_message = "Denoise applied"
+						status_timer = int(fps)
+
+				elif key in [ord('i'), ord('I')]:
+					if frame is not None:
+						viewer = ImageViewer(frame.copy())  # Pass frame directly
+						viewer.show()
+						status_message = "Image filters applied"
 						status_timer = int(fps)
 
 		self.video.release()

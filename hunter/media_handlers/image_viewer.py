@@ -14,14 +14,20 @@ from screeninfo import get_monitors
 logger = logging.getLogger("ImageViewer")
 
 # Import all filters you want to use (for the apply_filter sandbox)
-from .filters import CLAHE, edges, false_color, high_pass
+from .filters import CLAHE, edges, false_color, high_pass, bilateral, median, detail_enhance
 
 
 class ImageViewer:
-	def __init__(self, image_path):
-		logger.debug(f"loading image from {image_path}")
-		self.image_path = image_path
-		self.image = self._load_image()
+	def __init__(self, image_path_or_frame):
+		if isinstance(image_path_or_frame, np.ndarray):
+			# It's already a frame
+			self.image_path = "Video Frame"
+			self.image = image_path_or_frame
+		else:
+			# It's a path
+			logger.debug(f"loading image from {image_path_or_frame}")
+			self.image_path = image_path_or_frame
+			self.image = self._load_image()
 		self.display_image = None
 
 	def _load_image(self):
@@ -118,6 +124,12 @@ class ImageViewer:
 				case 'h':  # 'h' for High-Pass
 					logger.debug("Applying 'high_pass' filter...")
 					self.apply_filter("high_pass")
+				case 'b':  # 'b' for Bilateral
+					self.apply_filter("bilateral")
+				case 'm':  # 'm' for Median
+					self.apply_filter("median")
+				case 'd':  # 'd' for Detail
+					self.apply_filter("detail_enhance")
 
 				case _:
 					# Other key pressed, do nothing
@@ -151,7 +163,11 @@ class ImageViewer:
 			"edges":       edges,
 			"clahe":       CLAHE,
 			"false_color": false_color,
-			"high_pass":   high_pass
+			"high_pass":      high_pass,
+			"bilateral":      bilateral,
+			"median":         median,
+			"detail_enhance": detail_enhance
+
 		}
 
 		module = filter_map.get(filter_name)
