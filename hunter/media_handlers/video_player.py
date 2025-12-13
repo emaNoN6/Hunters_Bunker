@@ -100,6 +100,7 @@ class VideoPlayer:
 					if not paused:
 						status_timer -= 1
 
+				cv2.checkHardwareSupport(cv2.CPAUD)
 				cv2.imshow('Video', display_frame)
 
 			key = cv2.waitKeyEx(25 if not paused else 30)

@@ -46,7 +46,7 @@ class FilingClerk:
 
 				if lead_uuid:
 					# A good practice is to update the object with its new ID
-					# in case it's needed immediately by another process.
+					# in case it's necessary immediately for another process.
 					lead.lead_uuid = str(lead_uuid)
 					logger.info(f"Filed new lead {lead.lead_uuid}: {lead.title}")
 					filed_count += 1

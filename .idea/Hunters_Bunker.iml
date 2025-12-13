@@ -16,7 +16,9 @@
       <excludeFolder url="file://$MODULE_DIR$/.junie" />
       <excludeFolder url="file://$MODULE_DIR$/.vscode" />
       <excludeFolder url="file://$MODULE_DIR$/.github" />
+      <excludeFolder url="file://$MODULE_DIR$/SQL_script_storage" />
     </content>
+    <content url="file://$MODULE_DIR$/.idea/queries" />
     <orderEntry type="jdk" jdkName="Python 3.12 (Hunters_Bunker)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>

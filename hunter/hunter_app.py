@@ -570,12 +570,11 @@ class HunterApp(ctk.CTk):
 			metadata = lead_data.metadata
 			if metadata.__contains__('article_url'):
 				metadata_link = metadata.get('article_url')
-				extracted_links.append({'text': '🔗 ' + metadata.get('title'), 'url': metadata_link})
+				extracted_links.append({'text': '🔗 Article URL', 'url': metadata_link})
 
 			if metadata.__contains__('article_image'):
-				image = self.get_article_image(metadata.get('article_image'))
-				if image:
-					images.append({'text': 'Article Image', 'url': image})
+				extracted_links.append(
+						{'text': '🖼️ Article Image', 'url': metadata.get('article_image'), 'type': 'image'})
 
 			if metadata.__contains__('media'):
 				media = metadata.get('media')
@@ -591,9 +590,6 @@ class HunterApp(ctk.CTk):
 					case 'image':
 						label = f"🖼️ {media_type.title()}"
 						extracted_links.append({'text': label, 'url': media_url, 'type': 'image'})
-
-		if lead_data.url is not None:
-			extracted_links.append({'text': '🔗 Article URL', 'url': lead_data.url})
 
 		if not extracted_links:
 			ctk.CTkLabel(links_frame, text="No links found.", font=self.main_font, text_color="gray").pack()

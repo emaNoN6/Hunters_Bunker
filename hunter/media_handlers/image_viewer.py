@@ -174,7 +174,7 @@ class ImageViewer:
 
 		if module and hasattr(module, 'apply'):
 			try:
-				# A filter might be cancelled, so it returns
+				# A filter might be canceled, so it returns
 				# the original image.
 				original_image = self.display_image.copy()
 				processed_image = module.apply(original_image)

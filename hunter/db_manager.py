@@ -9,10 +9,11 @@ import os
 import uuid
 import logging
 from datetime import datetime, timezone
+from typing import List, Optional
 
 # --- Our Tools ---
 from . import config_manager
-from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS
+from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS, Asset
 
 logger = logging.getLogger("DB Manager")
 
@@ -60,13 +61,14 @@ def file_new_lead(conn, lead: LeadData, source_id: int) -> uuid.UUID | None:
 		return None
 
 	try:
-		# Step 1: Create or update entry in the router for de-duplication.
+		# Step 1: Create or update the entry in the router for de-duplication.
 		router_sql = """
-            INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date, status)
-            VALUES (%s, %s, %s, now(), %s, 'NEW')
-            ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
-            RETURNING lead_uuid, (xmax = 0) AS inserted;
-        """
+                     INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date,
+                                                     status)
+                     VALUES (%s, %s, %s, now(), %s, 'NEW')
+                     ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
+                     RETURNING lead_uuid, (xmax = 0) AS inserted; \
+		             """
 		# GIT_NOTE: Uppercase NEW to match enum
 		lead_uuid = uuid.uuid4()
 		with conn.cursor() as cur:
@@ -86,10 +88,10 @@ def file_new_lead(conn, lead: LeadData, source_id: int) -> uuid.UUID | None:
 
 		# Step 2: If new, insert content into the staging table.
 		staging_sql = """
-            INSERT INTO case_data_staging (uuid, title, full_text, full_html, metadata)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (uuid) DO NOTHING;
-        """
+                      INSERT INTO case_data_staging (uuid, title, full_text, full_html, metadata)
+                      VALUES (%s, %s, %s, %s, %s)
+                      ON CONFLICT (uuid) DO NOTHING; \
+		              """
 		with conn.cursor() as cur:
 			cur.execute(staging_sql, (
 				router_uuid,
@@ -119,16 +121,20 @@ def get_unprocessed_leads(conn) -> list[LeadData]:
 		return []
 
 	sql = """
-        SELECT
-            cds.title, cds.full_text, cds.full_html, cds.metadata,
-            ar.lead_uuid, ar.item_url, ar.publication_date,
-            s.source_name
-        FROM almanac.case_data_staging cds
-        JOIN almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
-        JOIN almanac.sources s ON ar.source_id = s.id
-        WHERE ar.status = 'NEW'
-        ORDER BY ar.publication_date DESC;
-    """
+          SELECT cds.title,
+                 cds.full_text,
+                 cds.full_html,
+                 cds.metadata,
+                 ar.lead_uuid,
+                 ar.item_url,
+                 ar.publication_date,
+                 s.source_name
+          FROM almanac.case_data_staging cds
+                   JOIN almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+                   JOIN almanac.sources s ON ar.source_id = s.id
+          WHERE ar.status = 'NEW'
+          ORDER BY ar.publication_date DESC; \
+	      """
 	leads = []
 	try:
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -140,7 +146,7 @@ def get_unprocessed_leads(conn) -> list[LeadData]:
 					if raw_metadata:
 						MetadataClass = METADATA_CLASS_MAP.get(row['source_name'])
 						if MetadataClass:
-							# Get list of extra fields for this source
+							# Get a list of extra fields for this source
 							extra_fields = METADATA_EXTRA_FIELDS.get(row['source_name'], [])
 
 							# Split metadata into dataclass fields and extra fields
@@ -193,10 +199,11 @@ def update_lead_status(conn, lead_uuid, new_status):
 		return False
 
 	sql = """
-        UPDATE almanac.acquisition_router
-        SET status = %s, last_seen_at = now()
-        WHERE lead_uuid = %s;
-    """
+          UPDATE almanac.acquisition_router
+          SET status       = %s,
+              last_seen_at = now()
+          WHERE lead_uuid = %s; \
+	      """
 	try:
 		with conn.cursor() as cursor:
 			cursor.execute(sql, (new_status, lead_uuid))
@@ -269,11 +276,12 @@ def get_required_foremen(conn):
 def get_active_sources_by_purpose(conn, purpose='lead_generation'):
 	"""Fetches all active sources for a specific purpose."""
 	sql = """
-        SELECT s.*, sd.agent_type, sd.has_standard_foreman
-        FROM sources s
-        JOIN source_domains sd ON s.domain_id = sd.id
-        WHERE s.is_active = TRUE AND s.purpose = %s;
-    """
+          SELECT s.*, sd.agent_type, sd.has_standard_foreman
+          FROM sources s
+                   JOIN source_domains sd ON s.domain_id = sd.id
+          WHERE s.is_active = TRUE
+            AND s.purpose = %s; \
+	      """
 	if not conn: return []
 	try:
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
@@ -302,11 +310,12 @@ def add_case(conn, lead_data):
 			source_id = source_id_result[0] if source_id_result else None
 
 			case_sql = """
-          INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date, status)
-          VALUES (%s, %s, %s, %s, %s, %s, %s, 'triaged')
-          ON CONFLICT (url, publication_date) DO NOTHING
-          RETURNING id, publication_date;
-          """
+                       INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date,
+                                          status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'triaged')
+                       ON CONFLICT (url, publication_date) DO NOTHING
+                       RETURNING id, publication_date; \
+			           """
 			cursor.execute(case_sql, (
 				uuid.UUID(lead_uuid), uuid.uuid4(),
 				source_id, lead_data.get("source_name"),
@@ -322,9 +331,9 @@ def add_case(conn, lead_data):
 
 			case_id, pub_date = case_result['id'], case_result['publication_date']
 			content_sql = """
-          INSERT INTO case_content (case_id, lead_uuid, publication_date, full_text, full_html)
-          VALUES (%s, %s, %s, %s, %s);
-          """
+                          INSERT INTO case_content (case_id, lead_uuid, publication_date, full_text, full_html)
+                          VALUES (%s, %s, %s, %s, %s); \
+			              """
 			cursor.execute(content_sql,
 			               (case_id, uuid.UUID(lead_uuid), pub_date, lead_data.get("text", ""),
 			                lead_data.get("html", "")))
@@ -348,17 +357,22 @@ def update_source_state(conn, source_id, success, new_bookmark=None):
 		with conn.cursor() as cursor:
 			if success:
 				sql = """
-                UPDATE sources SET last_checked_date = %s, last_success_date = %s,
-                   consecutive_failures = 0, last_known_item_id = COALESCE(%s, last_known_item_id)
-                WHERE id = %s;
-             """
+                      UPDATE sources
+                      SET last_checked_date    = %s,
+                          last_success_date    = %s,
+                          consecutive_failures = 0,
+                          last_known_item_id   = COALESCE(%s, last_known_item_id)
+                      WHERE id = %s; \
+				      """
 				cursor.execute(sql, (datetime.now(timezone.utc), datetime.now(timezone.utc), new_bookmark, source_id))
 			else:
 				sql = """
-                UPDATE sources SET last_checked_date = %s, last_failure_date = %s,
-                   consecutive_failures = consecutive_failures + 1
-                WHERE id = %s;
-             """
+                      UPDATE sources
+                      SET last_checked_date    = %s,
+                          last_failure_date    = %s,
+                          consecutive_failures = consecutive_failures + 1
+                      WHERE id = %s; \
+				      """
 				cursor.execute(sql, (datetime.now(timezone.utc), datetime.now(timezone.utc), source_id))
 			conn.commit()
 	except Exception as e:
@@ -402,11 +416,11 @@ def add_router_entry(lead_data):
 	# This new SQL uses ON CONFLICT on the 'item_url' to prevent duplicates.
 	# If the URL exists, it just updates the timestamp.
 	sql = """
-        INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date)
-        VALUES (%s, %s, %s, now(), %s)
-        ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
-        RETURNING lead_uuid;
-    """
+          INSERT INTO acquisition_router (lead_uuid, source_id, item_url, last_seen_at, publication_date)
+          VALUES (%s, %s, %s, now(), %s)
+          ON CONFLICT (item_url) DO UPDATE SET last_seen_at = now()
+          RETURNING lead_uuid; \
+	      """
 	# --- END FIX ---
 
 	conn = get_db_connection()
@@ -466,108 +480,103 @@ def add_staging_data(lead_uuid, lead_data):
 
 
 def get_active_sources_by_purpose2(purpose='lead_generation'):
-    """
-    Fetches all active sources for a specific purpose.
-    This is the primary way the dispatcher gets its mission roster.
-    """
-    sql = """
-        SELECT s.*, sd.agent_type 
-        FROM sources s 
-        JOIN source_domains sd ON s.domain_id = sd.id 
-        WHERE s.is_active = TRUE AND s.purpose = %s;
-    """
-    conn = get_db_connection()
-    if not conn:
-        return []
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(sql, (purpose,))
-            return [dict(row) for row in cursor.fetchall()]
-    except Exception as e:
-        logger.error(f"[DB_MANAGER ERROR]: Failed to get active sources for purpose '{purpose}': {e}")
-        return []
-    finally:
-        if conn:
-            conn.close()
+	"""
+	Fetches all active sources for a specific purpose.
+	This is the primary way the dispatcher gets its mission roster.
+	"""
+	sql = """
+          SELECT s.*, sd.agent_type
+          FROM sources s
+                   JOIN source_domains sd ON s.domain_id = sd.id
+          WHERE s.is_active = TRUE
+            AND s.purpose = %s; \
+	      """
+	conn = get_db_connection()
+	if not conn:
+		return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (purpose,))
+			return [dict(row) for row in cursor.fetchall()]
+	except Exception as e:
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get active sources for purpose '{purpose}': {e}")
+		return []
+	finally:
+		if conn:
+			conn.close()
 
 def get_staged_leads(limit=100):
-    """
-    Fetches a list of untriaged leads from the staging table for the GUI.
-    This version includes all the necessary data for promoting a lead to a case.
-    """
-    # --- THIS IS THE FIX ---
-    # We now select the item_url and publication_date from the router table.
-    sql = """
-        SELECT
-            cds.id,
-            cds.title,
-            ar.lead_uuid,
-            s.source_name,
-            ar.last_seen_at,
-            ar.item_url AS url,
-            ar.publication_date
-        FROM
-            almanac.case_data_staging cds
-        JOIN
-            almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
-        JOIN
-            almanac.sources s ON ar.source_id = s.id
-        WHERE
-            ar.status = 'NEW' OR ar.status = 'REVIEWING'
-        ORDER BY
-            ar.last_seen_at DESC
-        LIMIT %s;
-    """
-    # --- END FIX ---
-    conn = get_db_connection()
-    if not conn:
-        return []
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(sql, (limit,))
-            return [dict(row) for row in cursor.fetchall()]
-    except Exception as e:
-        logger.error("Failed to get staged leads", exc_info=True)
-        return []
-    finally:
-        if conn:
-            conn.close()
+	"""
+	Fetches a list of untriaged leads from the staging table for the GUI.
+	This version includes all the necessary data for promoting a lead to a case.
+	"""
+	# --- THIS IS THE FIX ---
+	# We now select the item_url and publication_date from the router table.
+	sql = """
+          SELECT cds.id,
+                 cds.title,
+                 ar.lead_uuid,
+                 s.source_name,
+                 ar.last_seen_at,
+                 ar.item_url AS url,
+                 ar.publication_date
+          FROM almanac.case_data_staging cds
+                   JOIN
+               almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+                   JOIN
+               almanac.sources s ON ar.source_id = s.id
+          WHERE ar.status = 'NEW'
+             OR ar.status = 'REVIEWING'
+          ORDER BY ar.last_seen_at DESC
+          LIMIT %s; \
+	      """
+	# --- END FIX ---
+	conn = get_db_connection()
+	if not conn:
+		return []
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (limit,))
+			return [dict(row) for row in cursor.fetchall()]
+	except Exception as e:
+		logger.error("Failed to get staged leads", exc_info=True)
+		return []
+	finally:
+		if conn:
+			conn.close()
 
 def get_staged_lead_details(lead_uuid):
-    """
-    Fetches the full details for a single untriaged lead from the staging area.
-    """
-    sql = """
-        SELECT
-            cds.title,
-            cds.full_text,
-            cds.full_html,
-            ar.item_url,
-            ar.publication_date,
-            s.source_name
-        FROM
-            almanac.case_data_staging cds
-        JOIN
-            almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
-        JOIN
-            almanac.sources s ON ar.source_id = s.id
-        WHERE
-            ar.lead_uuid = %s;
-    """
-    conn = get_db_connection()
-    if not conn:
-        return None
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(sql, (lead_uuid,))
-            details = cursor.fetchone()
-            return dict(details) if details else None
-    except Exception as e:
-        logger.error(f"[DB_MANAGER ERROR]: Failed to get details for lead '{lead_uuid}': {e}")
-        return None
-    finally:
-        if conn:
-            conn.close()
+	"""
+	Fetches the full details for a single untriaged lead from the staging area.
+	"""
+	sql = """
+          SELECT cds.title,
+                 cds.full_text,
+                 cds.full_html,
+                 ar.item_url,
+                 ar.publication_date,
+                 s.source_name
+          FROM almanac.case_data_staging cds
+                   JOIN
+               almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+                   JOIN
+               almanac.sources s ON ar.source_id = s.id
+          WHERE ar.lead_uuid = %s; \
+	      """
+	conn = get_db_connection()
+	if not conn:
+		return None
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+			cursor.execute(sql, (lead_uuid,))
+			details = cursor.fetchone()
+			return dict(details) if details else None
+	except Exception as e:
+		logger.error(f"[DB_MANAGER ERROR]: Failed to get details for lead '{lead_uuid}': {e}")
+		return None
+	finally:
+		if conn:
+			conn.close()
 
 
 # ==========================================================
@@ -635,7 +644,7 @@ def check_api_safety(service='wordsapi', min_remaining=50):
 	Returns:
 		tuple: (is_safe: bool, remaining: int, message: str)
 	"""
-	# Get the most recent API call to check current rate limit status
+	# Get the most recent API call to check the current rate limit status
 	sql = """
 		SELECT rate_limit_remaining, rate_limit_limit, called_at
 		FROM api_usage_log
@@ -670,3 +679,176 @@ def check_api_safety(service='wordsapi', min_remaining=50):
 	finally:
 		if conn:
 			conn.close()
+
+
+def save_asset(self, asset: Asset) -> Optional[str]:
+	"""
+	Save an asset to the database.
+	Returns the asset_id on success, None on failure.
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("save_asset: Database connection not available.")
+		return None
+
+	try:
+		with conn.cursor() as cur:
+			sql = """
+                  INSERT INTO almanac.assets (file_path, file_type, mime_type, file_size,
+                                              source_type, source_uuid, original_url,
+                                              related_cases, related_investigations,
+                                              is_processed, is_enhanced, notes, metadata)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  RETURNING asset_id; \
+			      """
+			cur.execute(sql, (
+				asset.file_path,
+				asset.file_type,
+				asset.mime_type,
+				asset.file_size,
+				asset.source_type,
+				asset.source_uuid,
+				asset.original_url,
+				asset.related_cases,  # PostgreSQL handles list → array
+				asset.related_investigations,
+				asset.is_processed,
+				asset.is_enhanced,
+				asset.notes,
+				psycopg2.extras.Json(asset.metadata) if asset.metadata else None
+			))
+			asset_id = cur.fetchone()[0]
+			conn.commit()
+			logger.info(f"Saved asset {asset_id}: {asset.file_path}")
+			return str(asset_id)
+	except Exception as e:
+		logger.error(f"Failed to save asset: {e}", exc_info=True)
+		if conn:
+			conn.rollback()
+		return None
+
+
+def get_asset(self, asset_id: str) -> Optional[Asset]:
+	"""
+	Retrieve an asset by ID.
+	Returns an Asset object or None if not found.
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("get_asset: Database connection not available.")
+		return None
+
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+			sql = "SELECT * FROM almanac.assets WHERE asset_id = %s;"
+			cur.execute(sql, (asset_id,))
+			row = cur.fetchone()
+
+			if not row:
+				logger.warning(f"Asset not found: {asset_id}")
+				return None
+
+			return _row_to_asset(row)
+	except Exception as e:
+		logger.error(f"Failed to get asset {asset_id}: {e}", exc_info=True)
+		return None
+
+
+def get_assets_for_case(self, case_uuid: str) -> List[Asset]:
+	"""
+	Get all assets linked to a specific case.
+	Returns a list of Asset objects (empty list if none is found).
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("get_assets_for_case: Database connection not available.")
+		return []
+
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+			sql = "SELECT * FROM almanac.assets WHERE %s = ANY(related_cases) ORDER BY created_at DESC;"
+			cur.execute(sql, (case_uuid,))
+			rows = cur.fetchall()
+
+			assets = [_row_to_asset(row) for row in rows]
+
+			logger.info(f"Found {len(assets)} assets for case {case_uuid}")
+			return assets
+	except Exception as e:
+		logger.error(f"Failed to get assets for case {case_uuid}: {e}", exc_info=True)
+		return []
+
+
+def get_assets_by_type(self, asset_type: str) -> List[Asset]:
+	"""
+	Get all assets of a specific type
+	Returns a list of Asset objects (empty list if none found).
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("get_assets_for_case: Database connection not available.")
+		return []
+
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+			sql = "SELECT * FROM almanac.assets WHERE file_type = %s ORDER BY created_at DESC;"
+			cur.execute(sql, (asset_type,))
+			rows = cur.fetchall()
+
+			assets = [_row_to_asset(row) for row in rows]
+
+			logger.info(f"Found {len(assets)} assets of type {asset_type}")
+			return assets
+	except Exception as e:
+		logger.error(f"Failed to get assets of type {asset_type}: {e}", exc_info=True)
+		return []
+
+
+def _row_to_asset(row) -> Asset:
+	asset = Asset(
+			asset_id=str(row['asset_id']),
+			file_path=row['file_path'],
+			file_type=row['file_type'],
+			mime_type=row['mime_type'],
+			file_size=row['file_size'],
+			created_at=row['created_at'],
+			source_type=row['source_type'],
+			source_uuid=str(row['source_uuid']) if row['source_uuid'] else None,
+			original_url=row['original_url'],
+			related_cases=[str(uuid) for uuid in row['related_cases']] if row['related_cases'] else [],
+			related_investigations=[str(uuid) for uuid in row['related_investigations']] if row[
+				'related_investigations'] else [],
+			is_processed=row['is_processed'],
+			is_enhanced=row['is_enhanced'],
+			notes=row['notes'],
+			metadata=row['metadata'] if row['metadata'] else {}
+	)
+	return asset
+
+
+def update_asset_metadata(self, asset_id: str, metadata: dict) -> bool:
+	"""
+	Update an asset's metadata (merges with existing).
+	Returns True on success, False on failure.
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("update_asset_metadata: Database connection not available.")
+		return False
+
+	try:
+		with conn.cursor() as cur:
+			# Use jsonb || operator to merge metadata
+			sql = """
+                  UPDATE almanac.assets
+                  SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                  WHERE asset_id = %s; \
+			      """
+			cur.execute(sql, (psycopg2.extras.Json(metadata), asset_id))
+			conn.commit()
+			logger.info(f"Updated metadata for asset {asset_id}")
+			return True
+	except Exception as e:
+		logger.error(f"Failed to update metadata for asset {asset_id}: {e}", exc_info=True)
+		if conn:
+			conn.rollback()
+		return False

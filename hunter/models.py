@@ -8,8 +8,10 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
+from logging import getLogger
 
+logger = getLogger(__name__)
 
 # ==========================================================
 # METADATA BLUEPRINTS
@@ -125,6 +127,59 @@ class SourceConfig:
 	keywords: Optional[str] = None
 	next_release_date: Optional[datetime] = None
 	has_standard_foreman: bool = True
+
+
+@dataclass
+class Asset:
+	"""Represents a media/document asset"""
+	asset_id: Optional[str] = None
+	file_path: Optional[str] = None
+	file_type: Optional[str] = 'unknown'  # 'image', 'video', 'audio', 'document'
+	mime_type: Optional[str] = None
+	file_size: Optional[int] = None
+	created_at: Optional[datetime] = None
+
+	source_type: Optional[str] = None  # 'lead', 'case', 'investigation', 'manual'
+	source_uuid: Optional[str] = None
+	original_url: Optional[str] = None
+
+	related_cases: Optional[List[str]] = None
+	related_investigations: Optional[List[str]] = None
+
+	is_processed: bool = False
+	is_enhanced: bool = False
+
+	notes: Optional[str] = None
+	metadata: Optional[Dict] = None
+
+	# Class-level constants for validation
+	VALID_FILE_TYPES = {'image', 'video', 'audio', 'document', 'unknown'}
+	VALID_SOURCE_TYPES = {'lead', 'case', 'investigation', 'manual'}
+
+	def __post_init__(self):
+		"""Initialize defaults and validate"""
+		# Initialize empty collections
+		if self.related_cases is None:
+			self.related_cases = []
+		if self.related_investigations is None:
+			self.related_investigations = []
+		if self.metadata is None:
+			self.metadata = {}
+
+		# Normalize and validate file_type
+		if self.file_type:
+			self.file_type = self.file_type.lower()
+			if self.file_type not in self.VALID_FILE_TYPES:
+				logger.error(f"Invalid file_type: {self.file_type}. Must be one of {self.VALID_FILE_TYPES}")
+				raise ValueError(f"Invalid file_type: {self.file_type}")
+
+		# Normalize and validate source_type
+		if self.source_type:
+			self.source_type = self.source_type.lower()
+			if self.source_type not in self.VALID_SOURCE_TYPES:
+				logger.error(f"Invalid source_type: {self.source_type}. Must be one of {self.VALID_SOURCE_TYPES}")
+				raise ValueError(f"Invalid source_type: {self.source_type}")
+
 # ==========================================================
 # METADATA REHYDRATION MAP
 # This is the crucial directory that allows the db_manager to
