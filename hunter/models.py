@@ -5,8 +5,9 @@
 # This file serves as the single source of truth for the
 # data structures passed between different parts of the app.
 # ==========================================================
-
-from dataclasses import dataclass, field
+import base64
+import uuid
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, Any, Dict, List
 from logging import getLogger
@@ -140,14 +141,13 @@ class Asset:
 	created_at: Optional[datetime] = None
 
 	source_type: Optional[str] = None  # 'lead', 'case', 'investigation', 'manual'
-	source_uuid: Optional[str] = None
+	source_uuid: Optional[uuid.UUID] = None
 	original_url: Optional[str] = None
 
-	related_cases: Optional[List[str]] = None
-	related_investigations: Optional[List[str]] = None
+	related_cases: Optional[List[uuid.UUID]] = None
+	related_investigations: Optional[List[uuid.UUID]] = None
 
-	is_processed: bool = False
-	is_enhanced: bool = False
+	is_enhanced: Optional[Dict] = None
 
 	notes: Optional[str] = None
 	metadata: Optional[Dict] = None
@@ -179,6 +179,28 @@ class Asset:
 			if self.source_type not in self.VALID_SOURCE_TYPES:
 				logger.error(f"Invalid source_type: {self.source_type}. Must be one of {self.VALID_SOURCE_TYPES}")
 				raise ValueError(f"Invalid source_type: {self.source_type}")
+
+
+@dataclass
+class ImageMetadata:
+	mime: Optional[str]
+	format: Optional[str]
+	width: int
+	height: int
+	mode: Optional[str]
+	dpi: Optional[tuple]
+	exif: Optional[Dict]
+	icc_profile: Optional[bytes]
+
+	def to_dict(self):
+		d = asdict(self)
+		if self.icc_profile:
+			d["icc_profile"] = base64.b64encode(self.icc_profile).decode("ascii")
+		if self.exif:
+			# EXIF values can be bytes, need to handle those too
+			d["exif"] = {k: v if not isinstance(v, bytes) else base64.b64encode(v).decode("ascii")
+			             for k, v in self.exif.items()}
+		return d
 
 # ==========================================================
 # METADATA REHYDRATION MAP

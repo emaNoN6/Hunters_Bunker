@@ -4,183 +4,221 @@
 #   File: image_viewer.py
 #   Purpose: Handles loading and viewing a single image
 #  ==========================================================
+import datetime
 import logging
+import os
+import sys
+import uuid
+
 import cv2
 import numpy as np
 import requests
+from io import BytesIO
+from PIL import Image
 from screeninfo import get_monitors
+from hunter.models import Asset, ImageMetadata
+
+from .. import db_manager
 
 # Setup logger for this module
 logger = logging.getLogger("ImageViewer")
 
-# Import all filters you want to use (for the apply_filter sandbox)
+# Import all filters (for the apply_filter sandbox)
 from .filters import CLAHE, edges, false_color, high_pass, bilateral, median, detail_enhance
 
+if sys.platform == "win32":
+    import magic
+
+    magic.Magic()
 
 class ImageViewer:
-	def __init__(self, image_path_or_frame):
-		if isinstance(image_path_or_frame, np.ndarray):
-			# It's already a frame
-			self.image_path = "Video Frame"
-			self.image = image_path_or_frame
-		else:
-			# It's a path
-			logger.debug(f"loading image from {image_path_or_frame}")
-			self.image_path = image_path_or_frame
-			self.image = self._load_image()
-		self.display_image = None
+    def __init__(self, image_path_or_frame, source_uuid):
+        self.image = None
+        self.metadata = None
+        self.original_bytes = None
+        self.display_image = None
+        self.source_uuid = source_uuid
 
-	def _load_image(self):
-		"""Internal helper to load from URL or local file."""
-		try:
-			if self.image_path.startswith("http"):
-				# Download the image
-				response = requests.get(self.image_path)
-				response.raise_for_status()
-				# Convert the raw bytes into a NumPy array
-				image_array = np.frombuffer(response.content, np.uint8)
-				# Decode the array into an image
-				return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-			else:
-				# It's a local file, read it directly
-				image = cv2.imread(self.image_path)
-				if image is None:
-					raise FileNotFoundError(f"Image file not found or is invalid: {self.image_path}")
-				return image
-		except Exception as e:
-			logger.error(f"Failed to load image: {e}")
-			raise
+        # Case 1: Already a NumPy frame (video)
+        if isinstance(image_path_or_frame, np.ndarray):
+            self.image_path = "Video Frame"
+            self.image = image_path_or_frame
+            return
 
-	def show(self):
-		"""
-		Shows the image in a self-contained OpenCV window.
-		Uses a "hot loop" (waitKey(1)) to prevent the
-		OpenCV threading bug.
-		"""
-		if self.image is None:
-			logger.error("No image to show.")
-			return
+        # Case 2: File path or URL
+        logger.debug(f"loading image from {image_path_or_frame}")
+        self.image_path = image_path_or_frame
 
-		window_name = self.image_path  # Use path as window title
+        # Load raw bytes FIRST
+        self.original_bytes = self._load_raw_bytes()
 
-		# --- THIS IS THE FIX ---
-		# We run a "hot loop" just like a video player,
-		# but just show the same frame.
-		while True:
-			# --- Resize logic (from earlier) ---
-			try:
-				(img_h, img_w) = self.image.shape[:2]
-				monitor = get_monitors()[0]
-				max_h = int(monitor.height * 0.90)
-				max_w = int(monitor.width * 0.90)
+        # Extract metadata BEFORE OpenCV touches the image
+        self.metadata = self.extract_metadata(self.original_bytes)
 
-				self.display_image = self.image
-				if img_h > max_h or img_w > max_w:
-					ratio = min(max_w / float(img_w), max_h / float(img_h))
-					new_dims = (int(img_w * ratio), int(img_h * ratio))
-					self.display_image = cv2.resize(self.image, new_dims, interpolation=cv2.INTER_AREA)
-			except Exception as e:
-				logger.error(f"Error resizing image: {e}")
-				self.display_image = self.image  # Show original on fail
-			# --- End Resize logic ---
+        # Decode into cv2 image
+        self.image = self._decode_cv2(self.original_bytes)
 
-			cv2.imshow(window_name, self.display_image)
+    def _load_raw_bytes(self):
+        """Load raw bytes from URL or local file."""
+        try:
+            if self.image_path.startswith("http"):
+                response = requests.get(self.image_path)
+                response.raise_for_status()
+                return response.content
+            else:
+                with open(self.image_path, "rb") as f:
+                    return f.read()
+        except Exception as e:
+            logger.error(f"Failed to load raw bytes: {e}")
+            raise
 
-			# Wait 1ms. This keeps the event loop "hot".
-			key = cv2.waitKey(1) & 0xFF
+    def _decode_cv2(self, raw_bytes):
+        """Decode raw bytes into an OpenCV image."""
+        try:
+            arr = np.frombuffer(raw_bytes, np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError("cv2.imdecode returned None")
+            return img
+        except Exception as e:
+            logger.error(f"Failed to decode image: {e}")
+            raise
 
-			# Check if user clicked 'X' on the window
-			if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-				logger.debug("Window 'X' button clicked.")
-				break
+    @staticmethod
+    def extract_metadata(raw_bytes: bytes) -> ImageMetadata:
+        """Extract metadata from raw image bytes using Pillow + python-magic."""
+        mime = magic.from_buffer(raw_bytes, mime=True)
+        img = Image.open(BytesIO(raw_bytes))
 
-			# --- Hotkey Logic ---
-			# Guard clause: 0xFF (255) is returned when no key is pressed
-			if key == 255:
-				continue
+        return ImageMetadata(
+                mime=mime,
+                format=img.format,
+                width=img.width,
+                height=img.height,
+                mode=img.mode,
+                dpi=img.info.get("dpi"),
+                exif=dict(img.getexif()) if hasattr(img, "getexif") else None,
+                icc_profile=img.info.get("icc_profile")
+        )
 
-			key_char = chr(key)
-			# Use match-case (Python 3.10+) for cleaner hotkeys
-			match key_char:
-				case 'q':  # 'q' to Quit
-					logger.debug("'q' key pressed. Quitting.")
-					break  # This breaks the while True loop
+    def show(self):
+        """
+        Shows the image in a self-contained OpenCV window.
+        Uses a "hot loop" (waitKey(1)) to prevent the
+        OpenCV threading bug.
+        """
+        if self.image is None:
+            logger.error("No image to show.")
+            return
 
-				case 's':  # 's' to Save
-					# You'll want to implement a real save path
-					self.save("saved_image.png")
-					logger.info("Image saved to saved_image.png")
+        window_name = self.image_path  # Use path as window title
 
-				# --- Filter Hotkeys ---
-				case 'e':  # 'e' for Edges
-					logger.debug("Applying 'edges' filter...")
-					self.apply_filter("edges")
-				case 'c':  # 'c' for CLAHE
-					logger.debug("Applying 'clahe' filter...")
-					self.apply_filter("clahe")
-				case 'f':  # 'f' for False Color
-					logger.debug("Applying 'false_color' filter...")
-					self.apply_filter("false_color")
-				case 'h':  # 'h' for High-Pass
-					logger.debug("Applying 'high_pass' filter...")
-					self.apply_filter("high_pass")
-				case 'b':  # 'b' for Bilateral
-					self.apply_filter("bilateral")
-				case 'm':  # 'm' for Median
-					self.apply_filter("median")
-				case 'd':  # 'd' for Detail
-					self.apply_filter("detail_enhance")
+        while True:
+            # Resize logic
+            try:
+                (img_h, img_w) = self.image.shape[:2]
+                monitor = get_monitors()[0]
+                max_h = int(monitor.height * 0.90)
+                max_w = int(monitor.width * 0.90)
 
-				case _:
-					# Other key pressed, do nothing
-					pass
+                self.display_image = self.image
+                if img_h > max_h or img_w > max_w:
+                    ratio = min(max_w / float(img_w), max_h / float(img_h))
+                    new_dims = (int(img_w * ratio), int(img_h * ratio))
+                    self.display_image = cv2.resize(self.image, new_dims, interpolation=cv2.INTER_AREA)
+            except Exception as e:
+                logger.error(f"Error resizing image: {e}")
+                self.display_image = self.image
 
-		# End of while loop
-		logger.debug(f"[{self.image_path}] Window loop broken. Cleaning up.")
-		try:
-			cv2.destroyWindow(window_name)
-		except cv2.error as e:
-			# This catches the error if the window was already closed (e.g., by 'X' button)
-			logger.debug(f"Filter window '{window_name}' already closed, skipping destroy: {e}")
-		except Exception as e:
-			logger.warning(f"An unexpected error occurred during filter window destroy: {e}")
-		# We must call waitKey *one more time* after destroying
-		# to allow OpenCV to process the destroy command.
-		cv2.waitKey(1)
+            cv2.imshow(window_name, self.display_image)
 
-	def save(self, output_path):
-		"""Saves the image to a file."""
-		if self.image is not None:
-			cv2.imwrite(output_path, self.image)
-			logger.debug(f"Image saved to {output_path}")
+            key = cv2.waitKey(1) & 0xFF
 
-	def apply_filter(self, filter_name):
-		"""
-		Applies a filter by dynamically running its 'apply' function.
-		"""
-		# Map filter names to their actual module (safer than exec)
-		filter_map = {
-			"edges":       edges,
-			"clahe":       CLAHE,
-			"false_color": false_color,
-			"high_pass":      high_pass,
-			"bilateral":      bilateral,
-			"median":         median,
-			"detail_enhance": detail_enhance
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                logger.debug("Window 'X' button clicked.")
+                break
 
-		}
+            if key == 255:
+                continue
 
-		module = filter_map.get(filter_name)
+            key_char = chr(key)
 
-		if module and hasattr(module, 'apply'):
-			try:
-				# A filter might be canceled, so it returns
-				# the original image.
-				original_image = self.display_image.copy()
-				processed_image = module.apply(original_image)
-				self.image = processed_image
-				logger.debug(f"Successfully applied filter: {filter_name}")
-			except Exception as e:
-				logger.error(f"Failed to apply filter '{filter_name}': {e}")
-		else:
-			logger.error(f"Filter '{filter_name}' not found or has no 'apply' function.")
+            match key_char:
+                case 'q':
+                    logger.debug("'q' key pressed. Quitting.")
+                    break
+
+                case 's':
+                    save_dir = "assets"
+                    image_name = f"{save_dir}/saved_image_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    self.save(image_name)
+                    logger.info(f"Image saved to {image_name}")
+
+                case 'e':
+                    self.apply_filter("edges")
+                case 'c':
+                    self.apply_filter("clahe")
+                case 'f':
+                    self.apply_filter("false_color")
+                case 'h':
+                    self.apply_filter("high_pass")
+                case 'b':
+                    self.apply_filter("bilateral")
+                case 'm':
+                    self.apply_filter("median")
+                case 'd':
+                    self.apply_filter("detail_enhance")
+
+                case _:
+                    pass
+
+        logger.debug(f"[{self.image_path}] Window loop broken. Cleaning up.")
+        try:
+            cv2.destroyWindow(window_name)
+        except Exception as e:
+            logger.debug(f"Window destroy skipped: {e}")
+        cv2.waitKey(1)
+
+    def save(self, output_path):
+        """Saves the image to a file."""
+        if self.image is not None:
+            cv2.imwrite(output_path, self.image)
+            file_size = os.path.getsize(output_path)
+            asset = Asset(
+                    source_uuid=uuid.UUID(self.source_uuid) if self.source_uuid else None,  # Convert to UUID
+                    file_path=output_path,
+                    file_type="image",
+                    mime_type="image/png",
+                    file_size=file_size,
+                    related_cases=[uuid.UUID(self.source_uuid)] if self.source_uuid else [],  # Convert to UUID
+                    metadata={
+                        "image_metadata": self.metadata.to_dict() if self.metadata else None
+                    }
+            )
+            logger.debug(f"Image saved to {output_path}")
+            db_manager.save_asset(asset)
+
+    def apply_filter(self, filter_name):
+        """Applies a filter by dynamically running its 'apply' function."""
+        filter_map = {
+            "edges":          edges,
+            "clahe":          CLAHE,
+            "false_color":    false_color,
+            "high_pass":      high_pass,
+            "bilateral":      bilateral,
+            "median":         median,
+            "detail_enhance": detail_enhance
+        }
+
+        module = filter_map.get(filter_name)
+
+        if module and hasattr(module, 'apply'):
+            try:
+                original_image = self.display_image.copy()
+                processed_image = module.apply(original_image)
+                self.image = processed_image
+                logger.debug(f"Successfully applied filter: {filter_name}")
+            except Exception as e:
+                logger.error(f"Failed to apply filter '{filter_name}': {e}")
+        else:
+            logger.error(f"Filter '{filter_name}' not found or has no 'apply' function.")

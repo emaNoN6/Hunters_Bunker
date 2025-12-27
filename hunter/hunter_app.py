@@ -5,6 +5,7 @@
 # ==========================================================
 import base64
 import io
+import uuid
 
 import customtkinter as ctk
 import threading
@@ -491,7 +492,7 @@ class HunterApp(ctk.CTk):
 
 			if decision == 'CASE':
 				lead = self.tree_lead_data[item_id]
-				db_manager.add_case(lead, self.db_conn)
+				db_manager.add_case(self.db_conn, lead)
 				logger.info(f"[TRIAGE]: Filed as CASE: {lead.title}")
 				processed_count += 1
 
@@ -566,6 +567,8 @@ class HunterApp(ctk.CTk):
 		extracted_links = link_extractor.find_links(raw_html)
 		images = []
 
+		if lead_data.url is not None:
+			extracted_links.append({'text': '🔗 Lead URL', 'url': lead_data.url, 'type': 'url'})
 		if lead_data.metadata is not None:
 			metadata = lead_data.metadata
 			if metadata.__contains__('article_url'):
@@ -604,14 +607,14 @@ class HunterApp(ctk.CTk):
 					# Use the existing wrapper function with partial
 					click_handler = partial(self.play_video, link['url'])
 				elif link.get('type') == 'image':
-					click_handler = partial(self.show_image, link['url'])
+					click_handler = partial(self.show_image, link['url'], lead_uuid)
 				else:
 					click_handler = partial(self.open_link_in_browser, link['url'])
 				link_label.bind("<Button-1>", click_handler)
 				TkToolTip(links_frame, message=link["url"])
 				counter += 1
 
-	def show_image(self, image_url: str, event=None):
+	def show_image(self, image_url: str, case_uuid: uuid.UUID, event=None):
 		"""Show image in a background thread to avoid blocking the GUI"""
 
 		def show_in_thread():
@@ -621,7 +624,7 @@ class HunterApp(ctk.CTk):
 				from hunter.media_handlers.image_viewer import ImageViewer
 
 				# Create the instance
-				viewer = ImageViewer(image_url)
+				viewer = ImageViewer(image_url, case_uuid)
 
 				# Run the blocking 'show' method
 				# This call has cv2.waitKey(0) and will pause

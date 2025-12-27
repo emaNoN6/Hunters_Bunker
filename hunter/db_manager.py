@@ -16,6 +16,7 @@ from . import config_manager
 from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS, Asset
 
 logger = logging.getLogger("DB Manager")
+psycopg2.extras.register_uuid()
 
 # --- Helper Function for Connections ---
 def get_db_connection():
@@ -292,12 +293,12 @@ def get_active_sources_by_purpose(conn, purpose='lead_generation'):
 		return []
 
 
-def add_case(conn, lead_data):
+def add_case(conn, lead_data: LeadData):
 	"""Promotes a lead from the triage desk to a permanent case."""
 	if not conn: return None
 	# NOTE: This function expects a dictionary-like object from the GUI for now.
 	# It will need to be adapted to handle the full LeadData object if called from backend.
-	lead_uuid = lead_data.get('lead_uuid')
+	lead_uuid = lead_data.lead_uuid
 	if not lead_uuid:
 		logger.error("Cannot add case without a lead_uuid.")
 		return None
@@ -312,20 +313,19 @@ def add_case(conn, lead_data):
 			case_sql = """
                        INSERT INTO cases (lead_uuid, public_uuid, source_id, source_name, title, url, publication_date,
                                           status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'triaged')
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'TRIAGED')
                        ON CONFLICT (url, publication_date) DO NOTHING
                        RETURNING id, publication_date; \
 			           """
 			cursor.execute(case_sql, (
 				uuid.UUID(lead_uuid), uuid.uuid4(),
-				source_id, lead_data.get("source_name"),
-				lead_data.get("title"), lead_data.get("url"),
-				lead_data.get("publication_date")
+				source_id, lead_data.source_name,
+				lead_data.title, lead_data.url, lead_data.publication_date
 			))
 			case_result = cursor.fetchone()
 
 			if not case_result:
-				logger.warning(f"Case already exists: {lead_data.get('title')}")
+				logger.warning(f"Case already exists: {lead_data.title}")
 				conn.rollback()
 				return None
 
@@ -335,14 +335,14 @@ def add_case(conn, lead_data):
                           VALUES (%s, %s, %s, %s, %s); \
 			              """
 			cursor.execute(content_sql,
-			               (case_id, uuid.UUID(lead_uuid), pub_date, lead_data.get("text", ""),
-			                lead_data.get("html", "")))
+			               (case_id, uuid.UUID(lead_uuid), pub_date, lead_data.text,
+			                lead_data.html))
 
-			update_router_sql = "UPDATE acquisition_router SET status = 'promoted' WHERE lead_uuid = %s;"
+			update_router_sql = "UPDATE acquisition_router SET status = 'PROMOTED' WHERE lead_uuid = %s;"
 			cursor.execute(update_router_sql, (uuid.UUID(lead_uuid),))
 
 			conn.commit()
-			logger.info(f"Successfully filed new case: {lead_data.get('title')}")
+			logger.info(f"Successfully filed new case: {lead_data.title}")
 			return case_id
 	except Exception as e:
 		logger.error(f"An error occurred adding a case: {e}", exc_info=True)
@@ -681,12 +681,12 @@ def check_api_safety(service='wordsapi', min_remaining=50):
 			conn.close()
 
 
-def save_asset(self, asset: Asset) -> Optional[str]:
+def save_asset(asset: Asset) -> Optional[str]:
 	"""
 	Save an asset to the database.
 	Returns the asset_id on success, None on failure.
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("save_asset: Database connection not available.")
 		return None
@@ -697,8 +697,8 @@ def save_asset(self, asset: Asset) -> Optional[str]:
                   INSERT INTO almanac.assets (file_path, file_type, mime_type, file_size,
                                               source_type, source_uuid, original_url,
                                               related_cases, related_investigations,
-                                              is_processed, is_enhanced, notes, metadata)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                              is_enhanced, notes, metadata)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                   RETURNING asset_id; \
 			      """
 			cur.execute(sql, (
@@ -711,7 +711,6 @@ def save_asset(self, asset: Asset) -> Optional[str]:
 				asset.original_url,
 				asset.related_cases,  # PostgreSQL handles list → array
 				asset.related_investigations,
-				asset.is_processed,
 				asset.is_enhanced,
 				asset.notes,
 				psycopg2.extras.Json(asset.metadata) if asset.metadata else None
@@ -852,3 +851,37 @@ def update_asset_metadata(self, asset_id: str, metadata: dict) -> bool:
 		if conn:
 			conn.rollback()
 		return False
+
+
+def search_cases(self, search_term: str, status: str = None,
+                 created_after: datetime = None, created_before: datetime = None) -> List[dict]:
+	"""
+	Search case_data_staging using full-text search with synonym/derivation expansion.
+
+	Args:
+		self:
+		search_term: The base term to search for
+		status: Optional filter by lead_status ('NEW', 'CASE', 'NOT_CASE', etc.)
+		created_after: Optional filter - only results published after this date
+		created_before: Optional filter - only results published before this date
+
+	Returns:
+		List of dicts with search results
+	"""
+	conn = self.get_connection()
+	if not conn:
+		logger.error("search_cases: Database connection not available.")
+		return []
+
+	try:
+		with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+			cur.execute(
+					"SELECT * FROM search_cds(%s, %s, %s, %s);",
+					(search_term, status, created_after, created_before)
+			)
+			results = cur.fetchall()
+			logger.info(f"Found {len(results)} results for search term: '{search_term}'")
+			return [dict(row) for row in results]
+	except Exception as e:
+		logger.error(f"Failed to search for term '{search_term}': {e}", exc_info=True)
+		return []
