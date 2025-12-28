@@ -816,7 +816,6 @@ def _row_to_asset(row) -> Asset:
 			related_cases=[str(uuid) for uuid in row['related_cases']] if row['related_cases'] else [],
 			related_investigations=[str(uuid) for uuid in row['related_investigations']] if row[
 				'related_investigations'] else [],
-			is_processed=row['is_processed'],
 			is_enhanced=row['is_enhanced'],
 			notes=row['notes'],
 			metadata=row['metadata'] if row['metadata'] else {}
