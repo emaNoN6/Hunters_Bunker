@@ -19,7 +19,7 @@ from datetime import datetime
 from PIL import Image
 import tkinterweb
 from functools import partial
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 # --- Our Custom Tools ---
 from hunter import config_manager
@@ -152,16 +152,14 @@ class HunterApp(ctk.CTk):
 		self.db_conn = db_manager.get_db_connection()
 		if not self.db_conn:
 			logger.critical("FATAL: Could not connect to PostgreSQL database.")
-			# TODO write messagebox for this error
-			#			messagebox.showerror("Database Error", "Could not connect to PostgreSQL. Application will close.")
+			messagebox.showerror("Database Error", "Could not connect to PostgreSQL. Application will close.")
 			return False
 
 		try:
 			self.dispatcher = Dispatcher(self.db_conn, self.config)
 		except Exception as e:
 			logger.critical(f"FATAL: Failed to initialize Dispatcher: {e}", exc_info=True)
-			# TODO write messagebox for this error
-			#			messagebox.showerror("Initialization Error", f"Failed to initialize dispatcher. Check logs.\n\n{e}")
+			messagebox.showerror("Initialization Error", f"Failed to initialize dispatcher. Check logs.\n\n{e}")
 			return False
 
 		logger.info("Database connected and dispatcher initialized successfully.")
