@@ -7,20 +7,37 @@
 #   Copyright (c) 2025 emaNoN & Codex
 #
 #  ==========================================================
+import time
 
 import cv2
 import os
 import logging
 import numpy as np
+from ffpyplayer.player import MediaPlayer
+from ffpyplayer.tools import set_log_callback
 from .image_viewer import ImageViewer
 
-loggings = logging.getLogger("Video Player")
+logger = logging.getLogger("Video Player")
 
 
 class VideoPlayer:
 	def __init__(self, video_path):
+		#		video_path = "C:\\Users\\mstil\\Downloads\\Look Away (2018) [BluRay] [1080p] [YTS.AM]\\Look.Away.2018.1080p.BluRay.x264-[YTS.AM].mp4"
 		self.video_path = video_path
 		self.video = cv2.VideoCapture(video_path)
+		self.fps = self.video.get(cv2.CAP_PROP_FPS) or 30  # Default to 30 if not found
+		self.audio = MediaPlayer(video_path, ff_opts={'sync': 'audio', 'framedrop': True})  # Initialize audio player
+
+		for _ in range(100):
+			meta = self.audio.get_metadata()
+			if meta.get('duration') is not None:
+				logger.debug(f"Delay: {_}")
+				break
+			time.sleep(0.1)
+		logger.debug(f"Audio info: {self.audio.get_metadata()}")  # Log audio metadata for debugging
+
+	def log_callback(message, level):
+		print(f"message: {message}    level: {level}")
 
 	def show_controls_help(self):
 		"""Create a static window showing keyboard controls"""
@@ -48,6 +65,7 @@ class VideoPlayer:
 		cv2.imshow('Controls', help_window)
 
 	def play(self):
+		frame_delay = 1 / self.fps
 		self.show_controls_help()  # Show controls window once
 
 		paused = False
@@ -66,10 +84,15 @@ class VideoPlayer:
 		cv2.createTrackbar('Progress', 'Video', 0, total_frames, lambda x: None)
 
 		while self.video.isOpened():
+			start_time = time.time()
 			if not paused:
 				success, frame = self.video.read()
 				if not success:
 					break
+
+			set_log_callback(self.log_callback)
+
+			audio_frame, audio_val = self.audio.get_frame(show=False)
 
 			# Make a copy for overlay (don't modify original)
 			display_frame = frame.copy() if frame is not None else frame
@@ -100,8 +123,6 @@ class VideoPlayer:
 					if not paused:
 						status_timer -= 1
 
-				# cv2 doesn't do audio.
-				#				cv2.checkHardwareSupport(cv2.CPAUD)
 				cv2.imshow('Video', display_frame)
 
 			key = cv2.waitKeyEx(25 if not paused else 30)
@@ -171,7 +192,13 @@ class VideoPlayer:
 						status_message = "Image filters applied"
 						status_timer = int(fps)
 
+			elapsed_time = time.time() - start_time
+			wait_time = frame_delay - elapsed_time
+			if wait_time > 0:
+				time.sleep(wait_time)
+
 		self.video.release()
+		self.audio.close_player()
 		cv2.destroyAllWindows()
 	def extract_frame(self, frame_number):
 		# Save current position

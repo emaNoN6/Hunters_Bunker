@@ -726,12 +726,12 @@ def save_asset(asset: Asset) -> Optional[str]:
 		return None
 
 
-def get_asset(self, asset_id: str) -> Optional[Asset]:
+def get_asset(asset_id: str) -> Optional[Asset]:
 	"""
 	Retrieve an asset by ID.
 	Returns an Asset object or None if not found.
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("get_asset: Database connection not available.")
 		return None
@@ -752,12 +752,12 @@ def get_asset(self, asset_id: str) -> Optional[Asset]:
 		return None
 
 
-def get_assets_for_case(self, case_uuid: str) -> List[Asset]:
+def get_assets_for_case(case_uuid: str) -> List[Asset]:
 	"""
 	Get all assets linked to a specific case.
 	Returns a list of Asset objects (empty list if none is found).
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("get_assets_for_case: Database connection not available.")
 		return []
@@ -777,12 +777,12 @@ def get_assets_for_case(self, case_uuid: str) -> List[Asset]:
 		return []
 
 
-def get_assets_by_type(self, asset_type: str) -> List[Asset]:
+def get_assets_by_type(asset_type: str) -> List[Asset]:
 	"""
 	Get all assets of a specific type
 	Returns a list of Asset objects (empty list if none found).
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("get_assets_for_case: Database connection not available.")
 		return []
@@ -823,12 +823,12 @@ def _row_to_asset(row) -> Asset:
 	return asset
 
 
-def update_asset_metadata(self, asset_id: str, metadata: dict) -> bool:
+def update_asset_metadata(asset_id: str, metadata: dict) -> bool:
 	"""
 	Update an asset's metadata (merges with existing).
 	Returns True on success, False on failure.
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("update_asset_metadata: Database connection not available.")
 		return False
@@ -852,7 +852,7 @@ def update_asset_metadata(self, asset_id: str, metadata: dict) -> bool:
 		return False
 
 
-def search_cases(self, search_term: str, status: str = None,
+def search_cases(search_term: str, status: str = None,
                  created_after: datetime = None, created_before: datetime = None) -> List[dict]:
 	"""
 	Search case_data_staging using full-text search with synonym/derivation expansion.
@@ -867,7 +867,7 @@ def search_cases(self, search_term: str, status: str = None,
 	Returns:
 		List of dicts with search results
 	"""
-	conn = self.get_connection()
+	conn = get_db_connection()
 	if not conn:
 		logger.error("search_cases: Database connection not available.")
 		return []
@@ -883,4 +883,99 @@ def search_cases(self, search_term: str, status: str = None,
 			return [dict(row) for row in results]
 	except Exception as e:
 		logger.error(f"Failed to search for term '{search_term}': {e}", exc_info=True)
+		return []
+
+
+def check_for_existing_leads_by_url(db_conn, lead_urls):
+	"""
+	Checks if any of the given URLs already exist in the acquisition_router.
+
+	Args:
+		db_conn: The database connection object.
+		lead_urls (List[str]): A list of URLs to check.
+
+	Returns:
+		List[str]: A list of URLs that already exist in the database.
+	"""
+	if not db_conn:
+		logger.error("check_for_existing_leads_by_url: Database connection not available.")
+		return []
+
+	sql = "SELECT item_url FROM acquisition_router WHERE item_url = ANY(%s);"
+	with db_conn.cursor() as cur:
+		cur.execute(sql, (lead_urls,))
+		return [row[0] for row in cur.fetchall()]
+
+
+def get_lead_by_uuid(db_conn, lead_uuid: str) -> Optional[LeadData]:
+	"""
+	Fetches a single lead by its UUID from the staging area and reconstructs it
+	into a validated LeadData object.
+	"""
+	if not db_conn:
+		logger.error("get_lead_by_uuid: Database connection not available.")
+		return None
+
+	sql = """
+          SELECT cds.title, cds.full_text, cds.full_html, cds.metadata,
+                 ar.lead_uuid, ar.item_url, ar.publication_date, s.source_name
+          FROM almanac.case_data_staging cds
+                   JOIN almanac.acquisition_router ar ON cds.uuid = ar.lead_uuid
+                   JOIN almanac.sources s ON ar.source_id = s.id
+          WHERE ar.lead_uuid = %s;
+	      """
+	try:
+		with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+			cur.execute(sql, (lead_uuid,))
+			row = cur.fetchone()
+			if not row:
+				return None
+
+			metadata_obj = None
+			raw_metadata = row['metadata']
+			if raw_metadata:
+				MetadataClass = METADATA_CLASS_MAP.get(row['source_name'])
+				if MetadataClass:
+					extra_fields = METADATA_EXTRA_FIELDS.get(row['source_name'], [])
+					metadata_for_class = {k: v for k, v in raw_metadata.items() if k not in extra_fields}
+					extra_data = {k: v for k, v in raw_metadata.items() if k in extra_fields}
+					metadata_obj = MetadataClass(**metadata_for_class)
+					metadata_dict = metadata_obj.__dict__
+					metadata_dict.update(extra_data)
+				else:
+					metadata_dict = raw_metadata
+			else:
+				metadata_dict = {}
+
+			return LeadData(title=row['title'], url=row['item_url'], source_name=row['source_name'],
+			                publication_date=row['publication_date'], text=row['full_text'], html=row['full_html'],
+			                metadata=metadata_dict, lead_uuid=str(row['lead_uuid']))
+	except Exception as e:
+		logger.error(f"Failed to rehydrate lead {lead_uuid} from DB. Error: {e}", exc_info=True)
+		return None
+
+
+def get_all_cases(db_conn) -> List[dict]:
+	"""
+	Fetches all cases from the 'cases' table.
+
+	Args:
+		db_conn: The database connection object.
+
+	Returns:
+		List[dict]: A list of dictionaries, each representing a case.
+	"""
+	if not db_conn:
+		logger.error("get_all_cases: Database connection not available.")
+		return []
+
+	sql = """
+          SELECT * FROM almanac.cases ORDER BY created_at DESC;
+	      """
+	try:
+		with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+			cur.execute(sql)
+			return [dict(row) for row in cur.fetchall()]
+	except Exception as e:
+		logger.error(f"Failed to retrieve all cases: {e}", exc_info=True)
 		return []

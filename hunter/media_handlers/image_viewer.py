@@ -176,7 +176,7 @@ class ImageViewer:
         try:
             cv2.destroyWindow(window_name)
         except Exception as e:
-            logger.debug(f"Window destroy skipped: {e}")
+            pass
         cv2.waitKey(1)
 
     def save(self, output_path):

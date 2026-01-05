@@ -26,4 +26,5 @@ hunter_model.joblib
 /docs/
 /SQL_script_storage/
 *.jpg
+*.png
 /.env

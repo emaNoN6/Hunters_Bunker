@@ -30,12 +30,25 @@ class FilingClerk:
 		if not leads:
 			return
 
-		# TODO: Implement a pre-flight duplicate check against the database
-		# by sending all lead.url values to a new db_manager function.
-		# This will prevent wasting time trying to insert duplicates.
+		# Extract URLs for duplicate checking
+		lead_urls = [lead.url for lead in leads]
+		existing_urls = db_manager.check_for_existing_leads_by_url(self.db_conn, lead_urls)
+
+		new_leads_to_file = []
+		for lead in leads:
+			if lead.url not in existing_urls:
+				new_leads_to_file.append(lead)
+		#			else:
+		#				logger.info(f"Skipping duplicate lead: {lead.url}")
+
+		if not new_leads_to_file:
+			logger.info("All leads were duplicates or no new leads to file.")
+			return
+
+		leads_to_process = new_leads_to_file
 
 		filed_count = 0
-		for lead in leads:
+		for lead in leads_to_process:
 			try:
 
 				source_id = db_manager.get_source_id(lead.source_name)
@@ -56,5 +69,4 @@ class FilingClerk:
 			except Exception as e:
 				# This could be a database error or another unexpected issue.
 				logger.error(f"An unexpected error occurred while filing lead '{lead.title}': {e}", exc_info=True)
-
-		logger.info(f"Filing run complete. Successfully filed {filed_count}/{len(leads)} leads.")
+		logger.info(f"Filing run complete. Successfully filed {filed_count}/{len(leads_to_process)} leads.")

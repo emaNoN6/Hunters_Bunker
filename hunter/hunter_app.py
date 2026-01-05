@@ -593,7 +593,12 @@ class HunterApp(ctk.CTk):
 					case 'image':
 						label = f"🖼️ {media_type.title()}"
 						extracted_links.append({'text': label, 'url': media_url, 'type': 'image'})
-
+					case 'gallery':
+						gallery_items = media.get('url', [])
+						i = 0
+						for item in gallery_items:
+							i = i + 1
+							extracted_links.append({'text': f"🖼️ Gallery Image {i}:", 'url': item, 'type': 'image'})
 		if not extracted_links:
 			ctk.CTkLabel(links_frame, text="No links found.", font=self.main_font, text_color="gray").pack()
 		else:
