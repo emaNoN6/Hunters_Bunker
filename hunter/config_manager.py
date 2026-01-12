@@ -65,6 +65,19 @@ def get_pgsql_admin_credentials():
 		return None
 
 
+def get_db_connection_string():
+	"""
+	Constructs a libpq connection string from the PostgreSQL credentials.
+	Format: postgresql://user:password@host:port/dbname
+	"""
+	creds = get_pgsql_credentials()
+	if not creds:
+		return None
+
+	# Standard libpq connection string construction
+	return f"postgresql://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['dbname']}"
+
+
 def get_logging_config():
 	"""Reads the [Logging] section from the config file."""
 	if not _config:

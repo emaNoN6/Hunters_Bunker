@@ -1,6 +1,5 @@
 # ==========================================================
-# Hunter's Command Console - Dispatcher (v4 - Corrected)
-# Copyright (c) 2025, M. Stilson & Codex
+# Hunter's Command Console - Dispatcher (v4.1 - State Fixed)
 # ==========================================================
 
 import importlib
@@ -10,30 +9,20 @@ import inspect
 from pathlib import Path
 from hunter.models import SourceConfig
 
-from sympy.strategies.core import switch
-
 # --- Our Tools ---
-from hunter import db_manager  # Import the module itself
+from hunter import db_manager
 from hunter.filing_clerk import FilingClerk
 
 logger = logging.getLogger("Dispatcher")
 
 
-def _build_foreman_map(conn):  # <-- FIX: Takes the connection object, named 'conn'
-	"""
-	Dynamically builds the foreman map by validating required foremen
-	against the filesystem.
-	"""
-	# Step 1: Get the REQUIRED list from the database.
-	# This call now correctly uses the imported 'db_manager' module.
-	required_foremen = db_manager.get_required_foremen(conn)
+def _build_foreman_map():
+	"""Dynamically builds the foreman map."""
+	required_foremen = db_manager.get_required_foremen()
 	if not required_foremen:
-		logger.warning("No required foremen found in the database view 'foreman_agents'.")
+		logger.warning("No required foremen found in the database.")
 		return {}
 
-	logger.info(f"Database requires foremen: {required_foremen}")
-
-	# Step 2: Scan the filesystem to see what foremen are AVAILABLE.
 	foreman_map = {}
 	foreman_dir = Path(__file__).parent / 'foremen'
 	for f in foreman_dir.glob('*.py'):
@@ -44,39 +33,33 @@ def _build_foreman_map(conn):  # <-- FIX: Takes the connection object, named 'co
 			handler = None
 			for name, obj in inspect.getmembers(module):
 				if inspect.isclass(obj) and name.endswith('Foreman'):
-					handler = obj  # New class-based foreman
+					handler = obj
 					break
 			if not handler:
-				handler = module  # Old function-based foreman
+				handler = module
 			foreman_map[module_name] = handler
 		except ImportError as e:
 			logger.error(f"Failed to import foreman module {module_name}: {e}")
 
-	# Step 3: Validate that all REQUIRED foremen are AVAILABLE.
 	for req in required_foremen:
 		if req not in foreman_map:
-			# This is our Python version of crash_and_burn()
-			error_msg = f"CRITICAL BOOTSTRAP FAILED: Database requires foreman '{req}', but file 'hunter/foremen/{req}.py' was not found or failed to import."
+			error_msg = f"CRITICAL BOOTSTRAP FAILED: Missing foreman '{req}'."
 			logger.critical(error_msg)
 			raise ImportError(error_msg)
 
-	logger.info("All required foremen are present. Foreman map built successfully.")
 	return foreman_map
 
 
 class Dispatcher:
-	# FIX: The first argument is now unambiguously named 'db_conn'.
-	def __init__(self, db_conn, config):
-		self.db_conn = db_conn  # <-- FIX: The connection object
+	def __init__(self, config):
 		self.config = config
-		self.filing_clerk = FilingClerk(db_conn)
+		self.filing_clerk = FilingClerk()
 		self.active_threads = {}
-		# This now correctly passes the connection object to the builder.
-		self.foreman_map = _build_foreman_map(self.db_conn)
+		self.foreman_map = _build_foreman_map()
 
 	def dispatch(self, sources):
 		threads = []
-		self.all_threads_done = threading.Event()  # Create event flag
+		self.all_threads_done = threading.Event()
 
 		for source in sources:
 			source_config = SourceConfig(**source)
@@ -85,11 +68,10 @@ class Dispatcher:
 			threads.append(thread)
 			thread.start()
 
-		# Start a watcher thread that sets the event when all workers finish
 		def wait_for_all():
 			for thread_loop in threads:
 				thread_loop.join()
-			self.all_threads_done.set()  # Signal that all threads are done
+			self.all_threads_done.set()
 
 		watcher = threading.Thread(target=wait_for_all)
 		watcher.start()
@@ -97,64 +79,56 @@ class Dispatcher:
 
 	def _dispatch_source(self, source_config: SourceConfig):
 		source_name = source_config.source_name
-		agent_type = source_config.agent_type  # From the VIEW/JOIN
+		agent_type = source_config.agent_type
 
 		if not all([source_name, agent_type]):
-			logger.error(f"Source is missing required configuration (name or agent_type).")
+			logger.error(f"Source missing required config.")
 			return
 
-		logger.info(f"Dispatching hunt for source: {source_name}")
-
 		try:
-			# --- AGENT MODULE ---
-			agent_module_name = agent_type  # Convention: agent_type matches agent .py file name
-			agent_module = importlib.import_module(f"search_agents.{agent_module_name}_agent")
+			# 1. AGENT HUNT
+			agent_module = importlib.import_module(f"search_agents.{agent_type}_agent")
 			credentials = None
-			logger.info(f"Getting credentials for: {agent_module_name}")
-			match agent_module_name:
-				case 'reddit':
-					credentials = self.config.get_reddit_credentials()
-				case 'gnews_io':
-					credentials = self.config.get_gnews_io_credentials()
+			if agent_type == 'reddit':
+				credentials = self.config.get_reddit_credentials()
+			elif agent_type == 'gnews_io':
+				credentials = self.config.get_gnews_io_credentials()
 
 			raw_leads, bookmark = agent_module.hunt(source_config, credentials)
 
 			if not raw_leads:
+				# Even if no leads, update the 'last_checked_date' to show we looked
+				db_manager.update_source_state(source_config.id, success=True)
 				logger.info(f"Agent for '{source_name}' returned no new leads.")
 				return
 
-			# --- FOREMAN MODULE ---
+			# 2. FOREMAN TRANSLATION
 			foreman_name = f"{agent_type}_foreman"
 			foreman_handler = self.foreman_map.get(foreman_name)
-			if not foreman_handler:
-				# This should be caught at startup, but is a good runtime safety check.
-				logger.error(f"No foreman found for '{foreman_name}'.")
-				return
 
 			processed_leads = []
 			if inspect.isclass(foreman_handler):
 				foreman_instance = foreman_handler(source_config)
 				processed_leads = foreman_instance.translate_leads(raw_leads)
-			else:  # Fallback for old function-based foremen
+			else:
 				processed_leads = foreman_handler.translate(raw_leads, source_name)
 
 			if not processed_leads:
-				logger.warning(f"Foreman for '{source_name}' processed {len(raw_leads)} raw leads into 0 valid leads.")
+				db_manager.update_source_state(source_config.id, success=True)
 				return
 
-			# --- FILING CLERK ---
-			logger.info(f"Handing off {len(processed_leads)} leads from '{source_name}' to Filing Clerk.")
+			# 3. FILING
 			self.filing_clerk.file_leads(processed_leads)
 
-			# --- UPDATE SOURCE STATE ---
-			# You'll need a function in db_manager to update the last_checked time, etc.
-			# db_manager.update_source_state(self.db_conn, source_config['id'], success=True, new_bookmark=bookmark)
+			# 4. COMMIT STATE (The Fix)
+			# We pass the bookmark back to the DB so the NEXT hunt knows where to start.
+			db_manager.update_source_state(source_config.id, success=True, new_bookmark=bookmark)
+			logger.info(f"Source '{source_name}' state updated with bookmark: {bookmark}")
 
-		except ImportError as e:
-			logger.error(f"Failed to import module for source '{source_name}': {e}")
 		except Exception as e:
-			logger.critical(f"An unexpected error occurred in the dispatch loop for '{source_name}': {e}",
-			                exc_info=True)
+			logger.critical(f"Error in dispatch loop for '{source_name}': {e}", exc_info=True)
+			# Log the failure in the DB so the GUI shows the source is erroring
+			db_manager.update_source_state(source_config.id, success=False)
 		finally:
 			if source_name in self.active_threads:
 				del self.active_threads[source_name]

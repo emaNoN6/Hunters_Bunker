@@ -6,7 +6,6 @@
 # data structures passed between different parts of the app.
 # ==========================================================
 import base64
-import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, Any, Dict, List
@@ -26,6 +25,7 @@ logger = getLogger(__name__)
 class RedditMedia:
 	"""A validated container for Reddit-specific media information."""
 	url: Optional[str] = None
+	fallback_url: Optional[str] = None
 	type: Optional[str] = None
 	duration: Optional[int] = None
 
@@ -141,11 +141,11 @@ class Asset:
 	created_at: Optional[datetime] = None
 
 	source_type: Optional[str] = None  # 'lead', 'case', 'investigation', 'manual'
-	source_uuid: Optional[uuid.UUID] = None
+	source_uuid: Optional[str] = None
 	original_url: Optional[str] = None
 
-	related_cases: Optional[List[uuid.UUID]] = None
-	related_investigations: Optional[List[uuid.UUID]] = None
+	related_cases: Optional[List[str]] = None
+	related_investigations: Optional[List[str]] = None
 
 	is_enhanced: Optional[Dict] = None
 

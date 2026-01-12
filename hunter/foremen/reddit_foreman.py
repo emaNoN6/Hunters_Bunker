@@ -67,6 +67,7 @@ class RedditForeman:
 		if post_data.get('media_url'):
 			reddit_media = RedditMedia(
 					url=post_data.get('media_url'),
+					fallback_url=post_data.get('media_fallback_url'),
 					duration=post_data.get('media_duration'),
 					type=post_data.get('media_type')
 			)

@@ -19,7 +19,7 @@ from datetime import datetime
 from PIL import Image
 import tkinterweb
 from functools import partial
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, Menu
 
 # --- Our Custom Tools ---
 from hunter import config_manager
@@ -113,7 +113,6 @@ class HunterApp(ctk.CTk):
 			error_label.pack(expand=True)
 			return
 
-		self.db_conn = None
 		self.dispatcher = None
 		self.config = config_manager  # Assuming module-level access
 
@@ -148,21 +147,17 @@ class HunterApp(ctk.CTk):
 		self.after(200, self.refresh_triage_list)
 
 	def _init_db_and_components(self):
-		"""Initializes DB connection and all dependent components."""
-		self.db_conn = db_manager.get_db_connection()
-		if not self.db_conn:
-			logger.critical("FATAL: Could not connect to PostgreSQL database.")
-			messagebox.showerror("Database Error", "Could not connect to PostgreSQL. Application will close.")
+		# 1. Perform health check (this also warms up the lazy connection)
+		if not db_manager.check_database_connection():
+			logger.critical("FATAL: Database unreachable.")
 			return False
 
+		# 2. Initialize Dispatcher (No connection passed!)
 		try:
-			self.dispatcher = Dispatcher(self.db_conn, self.config)
+			self.dispatcher = Dispatcher(self.config)
 		except Exception as e:
-			logger.critical(f"FATAL: Failed to initialize Dispatcher: {e}", exc_info=True)
-			messagebox.showerror("Initialization Error", f"Failed to initialize dispatcher. Check logs.\n\n{e}")
+			logger.critical(f"FATAL: Components failed: {e}")
 			return False
-
-		logger.info("Database connected and dispatcher initialized successfully.")
 		return True
 
 	def build_triage_desk(self):
@@ -354,7 +349,7 @@ class HunterApp(ctk.CTk):
 		self.search_button.configure(state="disabled", text="Hunting...")
 
 		# Get the list of sources for the dispatcher from the db_manager
-		sources_to_hunt = db_manager.get_active_sources_by_purpose(self.db_conn)
+		sources_to_hunt = db_manager.get_active_sources_by_purpose()
 		if not sources_to_hunt:
 			logger.warning("No active sources found to hunt.")
 			self.search_button.configure(state="normal", text="Search for New Cases")
@@ -389,7 +384,7 @@ class HunterApp(ctk.CTk):
 		clear_time = time.perf_counter()
 
 		# Fetch leads from database (returns list[LeadData])
-		leads = db_manager.get_unprocessed_leads(self.db_conn)
+		leads = db_manager.get_unprocessed_leads()
 		fetch_time = time.perf_counter()
 
 		if not leads:
@@ -490,7 +485,7 @@ class HunterApp(ctk.CTk):
 
 			if decision == 'CASE':
 				lead = self.tree_lead_data[item_id]
-				db_manager.add_case(self.db_conn, lead)
+				db_manager.add_case(lead)
 				logger.info(f"[TRIAGE]: Filed as CASE: {lead.title}")
 				processed_count += 1
 
@@ -566,20 +561,29 @@ class HunterApp(ctk.CTk):
 		images = []
 
 		if lead_data.url is not None:
-			extracted_links.append({'text': '🔗 Lead URL', 'url': lead_data.url, 'type': 'url'})
+			extracted_links.append({'text':      '🔗 Lead URL',
+			                        'url':       lead_data.url,
+			                        'type':      'url',
+			                        'lead_uuid': lead_data.lead_uuid})
 		if lead_data.metadata is not None:
 			metadata = lead_data.metadata
 			if metadata.__contains__('article_url'):
 				metadata_link = metadata.get('article_url')
-				extracted_links.append({'text': '🔗 Article URL', 'url': metadata_link})
+				extracted_links.append({'text':      '🔗 Article URL',
+				                        'url':       metadata_link,
+				                        'lead_uuid': lead_data.lead_uuid})
 
 			if metadata.__contains__('article_image'):
 				extracted_links.append(
-						{'text': '🖼️ Article Image', 'url': metadata.get('article_image'), 'type': 'image'})
+						{'text':      '🖼️ Article Image',
+						 'url':       metadata.get('article_image'),
+						 'type':      'image',
+						 'lead_uuid': lead_data.lead_uuid})
 
 			if metadata.__contains__('media'):
 				media = metadata.get('media')
 				media_url = media.get('url')
+				media_fallback_url = media.get('fallback_url')
 				media_type = media.get('type')
 				duration = media.get('duration', 0)
 
@@ -587,16 +591,31 @@ class HunterApp(ctk.CTk):
 					case 'video':
 						# Add to links with duration if available
 						label = f"🎞️ {media_type.title()} ({duration}s)" if duration else media_type.title()
-						extracted_links.append({'text': label, 'url': media_url, 'type': 'video'})
+						extracted_links.append({'text':         label,
+						                        'url':          media_url if media_url else media_fallback_url,
+						                        'fallback_url': media_fallback_url,
+						                        'type':         'video',
+						                        'lead_uuid':    lead_data.lead_uuid})
 					case 'image':
 						label = f"🖼️ {media_type.title()}"
-						extracted_links.append({'text': label, 'url': media_url, 'type': 'image'})
+						extracted_links.append({'text':      label,
+						                        'url':       media_url,
+						                        'type':      'image',
+						                        'lead_uuid': lead_data.lead_uuid})
 					case 'gallery':
 						gallery_items = media.get('url', [])
 						i = 0
 						for item in gallery_items:
 							i = i + 1
-							extracted_links.append({'text': f"🖼️ Gallery Image {i}:", 'url': item, 'type': 'image'})
+							extracted_links.append({'text':      f"🖼️ Gallery Image {i}:",
+							                        'url':       item,
+							                        'type':      'image',
+							                        'lead_uuid': lead_data.lead_uuid})
+
+					case _:
+						logger.warning(f"Unhandled media type: {media_type}")
+						pass
+
 		if not extracted_links:
 			ctk.CTkLabel(links_frame, text="No links found.", font=self.main_font, text_color="gray").pack()
 		else:
@@ -607,8 +626,11 @@ class HunterApp(ctk.CTk):
 										  text_color=ACCENT_COLOR)
 				link_label.pack(fill="x", padx=5, pady=2)
 				if link.get('type') == 'video':
-					# Use the existing wrapper function with partial
-					click_handler = partial(self.play_video, link['url'])
+					click_handler = partial(self._show_video_menu,
+					                        link['url'],  # hls for viewing
+					                        link['fallback_url'],  # mp4 for analysis
+					                        link['lead_uuid'])
+					link_label.bind("<Button-1>", click_handler)
 				elif link.get('type') == 'image':
 					click_handler = partial(self.show_image, link['url'], lead_uuid)
 				else:
@@ -616,6 +638,54 @@ class HunterApp(ctk.CTk):
 				link_label.bind("<Button-1>", click_handler)
 				TkToolTip(links_frame, message=link["url"])
 				counter += 1
+
+	def _show_video_menu(self, hls_url, fallback_url, lead_uuid, event):
+		"""
+		Show video menu
+		"""
+
+		def open_in_browser(url: str):
+			import webbrowser
+			threading.Thread(
+					target=lambda: webbrowser.open_new_tab(url),
+					daemon=True
+			).start()
+
+		menu = Menu(self, tearoff=0)
+		menu.add_command(label="▶ Open in browser", command=lambda: [menu.destroy(), open_in_browser(hls_url)])
+		menu.add_separator()
+		if fallback_url:
+			menu.add_command(label="🔍 Analyze",
+			                 command=lambda: [menu.destroy(), self.analyze_video(fallback_url, lead_uuid=lead_uuid)])
+		menu.post(event.x_root, event.y_root)
+
+	@staticmethod
+	def _is_link_alive(link):
+		import requests
+		response = 0
+		try:
+			response = requests.head(link, timeout=5, allow_redirects=True)
+			logger.info(f"[APP]: Link status: {response.status_code}")
+			return response.status_code == 200
+		except:
+			logger.info(f"[APP]: Link status: {response.status_code}")
+			return False
+
+	def analyze_video(self, video_url: str, lead_uuid):
+		"""
+		Open video in cv2 player for analysis
+		"""
+		if not self._is_link_alive(video_url):
+			logger.info(f"Video link not found: {video_url}")
+			return False
+
+		def run():
+			from hunter.media_handlers.video_analysis import VideoAnalysis
+			analyzer = VideoAnalysis(video_url, lead_uuid)
+			analyzer.play()
+
+		threading.Thread(target=run, daemon=True).start()
+		logger.info(f"[APP]: Analyzing video: {video_url}")
 
 	def show_image(self, image_url: str, case_uuid: uuid.UUID, event=None):
 		"""Show image in a background thread to avoid blocking the GUI"""
@@ -645,6 +715,9 @@ class HunterApp(ctk.CTk):
 	def play_video(self, video_url: str, event=None):
 		"""Play video in a background thread to avoid blocking the GUI"""
 
+		if not self._is_link_alive(video_url):
+			logger.info(f"Video link not found: {video_url}")
+			return False
 		def play_in_thread():
 			try:
 				from hunter.media_handlers.video_player import VideoPlayer
@@ -772,6 +845,7 @@ class HunterApp(ctk.CTk):
 
 	def on_closing(self):
 		logger.info("Closing database connection and shutting down.")
-		if self.db_conn:
-			self.db_conn.close()
+		# TODO: add db_manager close connection.
+		#		if self.db_conn:
+		#			self.db_conn.close()
 		self.destroy()
