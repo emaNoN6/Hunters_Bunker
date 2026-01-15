@@ -334,10 +334,11 @@ def get_required_foremen() -> List[str]:
 		release_conn(conn)
 
 
+# TODO: call this somewhere
 def update_lead_status(lead_uuid: str, new_status: str) -> bool:
 	"""Updates the status of a lead in the acquisition_router."""
 	conn = get_conn()
-	valid_statuses = ['NEW', 'REVIEWING', 'PROCESSED', 'IGNORED', 'ERROR', 'TRIAGED', 'PROMOTED']
+	valid_statuses = ['NEW', 'TRIAGED' 'IGNORED', 'PROMOTED']
 	if new_status not in valid_statuses:
 		logger.error(f"Invalid status '{new_status}' for lead {lead_uuid}")
 		return False
@@ -529,3 +530,14 @@ def get_all_tasks() -> List[Dict]:
 			return [dict(row) for row in cur.fetchall()]
 	finally:
 		release_conn(conn)
+
+
+def remove_from_cds(uuid):
+	conn = get_conn()
+	try:
+		with conn.cursor() as cur:
+			cur.execute("DELETE FROM case_data_staging WHERE uuid = %s", (uuid,))
+		conn.commit()
+	except Exception as e:
+		conn.rollback()
+		logger.error(f"Failed to remove from case_data_staging for {uuid}: {e}")
