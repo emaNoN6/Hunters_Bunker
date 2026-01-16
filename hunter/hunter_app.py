@@ -480,32 +480,21 @@ class HunterApp(ctk.CTk):
 		processed_count = 0
 
 		# Iterate through all tree items
-		for item_id in self.tree_lead_data.keys():
+		results = {
+			'CASE':     [],
+			'NOT_CASE': [],
+			'SKIP':     []
+		}
+
+		for item_id, lead in self.tree_lead_data.items():
 			decision = self.triage_tree.set(item_id, 'decision')
-			lead = self.tree_lead_data[item_id]
+			if decision in results:
+				results[decision].append(lead.lead_uuid)
+				processed_count += 1
 
-			match decision:
-				case 'CASE':
-					db_manager.add_case(lead)
-					db_manager.remove_from_cds(lead.lead_uuid)
-					logger.info(f"[TRIAGE]: Filed as CASE: {lead.title}")
-					processed_count += 1
+		# One call, db_manager handles routing
+		db_manager.process_triage(results)
 
-				case 'NOT_CASE':
-					# TODO file to training data.
-					db_manager.remove_from_cds(lead.lead_uuid)
-					logger.info(f"[TRIAGE]: Filed as NOT_CASE: {lead.title}")
-					processed_count += 1
-
-				case 'SKIP':
-					db_manager.remove_from_cds(lead.lead_uuid)
-					logger.info(f"[TRIAGE]: Skipped (junk): {lead.title}")
-					processed_count += 1
-
-				case _:
-					pass  # Items with decision == '' are untouched and stay in the list
-
-		# Items with decision == '' are untouched and stay in the list
 
 		logger.info(f"[APP]: Processed {processed_count} leads. Refreshing list...")
 		self.refresh_triage_list()

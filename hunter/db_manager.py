@@ -118,6 +118,166 @@ def file_new_lead(lead: LeadData, source_id: int) -> Optional[str]:
 		release_conn(conn)
 
 
+def process_triage(results: dict):
+	conn = get_conn()
+	try:
+		if results['CASE']:
+			_promote_cases(results['CASE'])
+		if results['NOT_CASE']:
+			_export_for_training(conn, results['NOT_CASE'])  # Write to file first
+			_mark_ignored(conn, results['NOT_CASE'])
+			_delete_from_staging(conn, results['NOT_CASE'])
+		if results['SKIP']:
+			_mark_ignored(conn, results['SKIP'])
+			_delete_from_staging(conn, results['SKIP'])
+		conn.commit()
+	except:
+		conn.rollback()
+		raise
+	finally:
+		release_conn(conn)
+
+
+def _delete_from_staging(conn, leads):
+	SQL_SKIP_CASES = """
+	WITH ids AS (
+		SELECT unnest(%s::uuid[]) AS uuid
+	)
+	DELETE FROM case_data_staging AS cds
+	USING ids
+	WHERE cds.uuid = ids.uuid;
+	"""
+	with conn.cursor() as cur:
+		cur.execute(SQL_SKIP_CASES, (leads,))
+
+
+def _mark_ignored(conn, leads):
+	SQL_UPDATE_ROUTER = """
+	WITH ids AS (
+		SELECT unnest(%s::uuid[]) AS uuid
+	)
+	UPDATE acquisition_router ar
+	SET status = 'IGNORED'
+	FROM ids
+	WHERE ar.lead_uuid = ids.uuid;
+	"""
+	with conn.cursor() as cur:
+		cur.execute(SQL_UPDATE_ROUTER, (leads,))
+
+
+def _mark_promoted(conn, leads):
+	SQL_UPDATE_ROUTER = """
+	WITH ids AS (
+		SELECT unnest(%s::uuid[]) AS uuid
+	)
+	UPDATE acquisition_router ar
+	SET status = 'PROMOTED'
+	FROM ids
+	WHERE ar.lead_uuid = ids.uuid;
+	"""
+	with conn.cursor() as cur:
+		cur.execute(SQL_UPDATE_ROUTER, (leads,))
+
+
+def _export_for_training(conn, uuids):
+	"""Dump not-a-case leads to JSON/CSV for ML training"""
+	import json
+	sql = """
+        SELECT cds.uuid, cds.title, cds.full_text, cds.metadata
+        FROM case_data_staging cds
+        WHERE cds.uuid = ANY(%s::uuid[])
+    """
+	with conn.cursor() as cur:
+		cur.execute(sql, (uuids,))
+		rows = cur.fetchall()
+
+	# Append to training file
+	with open('data/training_data/not_a_case.jsonl', 'a') as f:
+		for row in rows:
+			f.write(json.dumps({
+				'uuid':     str(row[0]),
+				'title':    row[1],
+				'text':     row[2],
+				'metadata': row[3],
+				'label':    'not_a_case'
+			}) + '\n')
+
+
+def _promote_cases(uuids: List[str]):
+	SQL_PROMOTE_CASES = """
+	WITH ids AS (
+		SELECT unnest(%s::uuid[]) AS uuid
+	),
+	inserted AS (
+		INSERT INTO almanac.cases (
+			lead_uuid,
+			public_uuid,
+			title,
+			url,
+			publication_date,
+			status,
+			source_id,
+			source_name
+		)
+		SELECT
+			cds.uuid,
+			gen_random_uuid(),
+			cds.title,
+			ar.item_url,
+			ar.publication_date,
+			'TRIAGED',
+			ar.source_id,
+			s.source_name
+		FROM almanac.case_data_staging AS cds
+		JOIN ids ON cds.uuid = ids.uuid
+		JOIN almanac.acquisition_router ar ON ar.lead_uuid = cds.uuid
+		JOIN almanac.sources s ON s.id = ar.source_id
+		ON CONFLICT (url, publication_date) DO NOTHING
+		RETURNING id AS case_id, lead_uuid, publication_date
+	)
+	INSERT INTO almanac.case_content (
+		case_id,
+		lead_uuid,
+		publication_date,
+		full_text,
+		full_html
+	)
+	SELECT
+		i.case_id,
+		i.lead_uuid,
+		i.publication_date,
+		cds.full_text,
+		cds.full_html
+	FROM inserted i
+	JOIN almanac.case_data_staging cds ON cds.uuid = i.lead_uuid
+	RETURNING case_id, lead_uuid, publication_date;
+	"""
+
+	conn = get_conn()
+	try:
+		with conn.cursor() as cur:
+
+			# 1. Insert into cases + case_content (atomic pair)
+			cur.execute(SQL_PROMOTE_CASES, (uuids,))
+			inserted_rows = cur.fetchall()  # [(case_id, lead_uuid, publication_date), ...]
+
+			# 2. Delete from staging (cds)
+			_delete_from_staging(conn, uuids)
+
+			# 3. Update acquisition_router
+			_mark_promoted(conn, uuids)
+
+		conn.commit()
+		return inserted_rows
+
+	except Exception as e:
+		conn.rollback()
+		logger.error(f"Error promoting cases: {e}")
+		raise
+
+	finally:
+		release_conn(conn)
+
 def check_for_existing_leads_by_url(urls: List[str]) -> List[str]:
 	"""Checks the router for existing URLs to prevent duplicate processing."""
 	if not urls:
