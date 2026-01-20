@@ -28,3 +28,5 @@ hunter_model.joblib
 *.jpg
 *.png
 /.env
+/tools/db_diag.py
+/tools/sync_test.py
