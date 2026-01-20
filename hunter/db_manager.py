@@ -20,7 +20,7 @@ from psycopg2 import pool
 from hunter import config_manager
 from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS, Asset
 
-logger = logging.getLogger("DB_Manager")
+logger = logging.getLogger("DB Manager")
 
 # --- Thread-Safe Connection Pool ---
 _pool = None

@@ -290,11 +290,14 @@ class HunterApp(ctk.CTk):
 		if item_id and item_id in self.tree_lead_data:
 			lead = self.tree_lead_data[item_id]
 
+			# Wrap text to approx 60 chars to prevent extremely wide tooltips
+			display_text = textwrap.fill(lead.title, width=60)
+
 			# Create tooltip once if it doesn't exist
 			if not self.tree_tooltip:
 				self.tree_tooltip = TkToolTip(
 						self.triage_tree,
-						message=lead.title,
+						message=display_text,
 						delay=0.25,
 						x_offset=20,
 						y_offset=10,
@@ -303,9 +306,11 @@ class HunterApp(ctk.CTk):
 						font=(FONT_FAMILY, FONT_SIZE),
 						padding=8  # Adjust as needed
 				)
+				# Ensure multi-line text is left-aligned for better readability
+				self.tree_tooltip.label.configure(justify="left")
 			else:
 				# Update existing tooltip's message
-				self.tree_tooltip.label.configure(text=lead.title)
+				self.tree_tooltip.label.configure(text=display_text)
 				self.tree_tooltip.on_enter(event)
 		else:
 			if self.tree_tooltip:
