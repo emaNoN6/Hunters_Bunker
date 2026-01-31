@@ -6,6 +6,7 @@
 # data structures passed between different parts of the app.
 # ==========================================================
 import base64
+import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, Any, Dict, List
@@ -82,7 +83,7 @@ class LeadData:
 	metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
 
 	# === Internal Tracking (added later in the pipeline) ===
-	lead_uuid: Optional[str] = None
+	lead_uuid: Optional[uuid.UUID] = None
 
 	def __post_init__(self):
 		"""
@@ -133,7 +134,7 @@ class SourceConfig:
 @dataclass
 class Asset:
 	"""Represents a media/document asset"""
-	asset_id: Optional[str] = None
+	asset_id: Optional[uuid.UUID] = None
 	file_path: Optional[str] = None
 	file_type: Optional[str] = 'unknown'  # 'image', 'video', 'audio', 'document'
 	mime_type: Optional[str] = None
@@ -141,11 +142,11 @@ class Asset:
 	created_at: Optional[datetime] = None
 
 	source_type: Optional[str] = None  # 'lead', 'case', 'investigation', 'manual'
-	source_uuid: Optional[str] = None
+	source_uuid: Optional[uuid.UUID] = None
 	original_url: Optional[str] = None
 
-	related_cases: Optional[List[str]] = None
-	related_investigations: Optional[List[str]] = None
+	related_cases: Optional[List[uuid.UUID]] = None
+	related_investigations: Optional[List[uuid.UUID]] = None
 
 	is_enhanced: Optional[Dict] = None
 

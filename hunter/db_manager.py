@@ -10,11 +10,12 @@
 
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Tuple
 
 import psycopg2
-import psycopg2.extras
+from psycopg2.extras import register_uuid
 from psycopg2 import pool
 
 from hunter import config_manager
@@ -33,6 +34,7 @@ def _get_pool():
 			conn_str = config_manager.get_db_connection_string()
 			# Min 1, Max 10 connections. Adjust as needed for your snow-day load.
 			_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, conn_str, options="-c search_path=almanac,public")
+			register_uuid()
 			logger.info("Database Connection Pool initialized.")
 		except Exception as e:
 			logger.critical(f"Failed to initialize Connection Pool: {e}")
@@ -69,7 +71,7 @@ def check_database_connection() -> bool:
 # 1. Ingestion & Filing (The Clerk's Domain)
 # ==========================================================
 
-def file_new_lead(lead: LeadData, source_id: int) -> Optional[str]:
+def file_new_lead(lead: LeadData, source_id: int) -> Optional[uuid.UUID]:
 	"""
 	The Master Ingestion Transaction.
 	Explicitly passes the Lead UUID across tables to prevent 'sync cascade' failures.
@@ -109,7 +111,7 @@ def file_new_lead(lead: LeadData, source_id: int) -> Optional[str]:
 			cur.execute(staging_sql, (lead_uuid, lead.title, lead.text, lead.html, meta_json))
 
 		conn.commit()
-		return str(lead_uuid)
+		return lead_uuid
 	except Exception as e:
 		conn.rollback()
 		logger.error(f"Filing failed for {lead.title}: {e}")
@@ -329,7 +331,7 @@ def get_unprocessed_leads() -> List[LeadData]:
 							text=row['full_text'],
 							html=row['full_html'],
 							metadata=metadata_dict,
-							lead_uuid=str(row['lead_uuid'])
+							lead_uuid=row['lead_uuid']
 					)
 					leads.append(lead)
 				except Exception as e:
@@ -363,7 +365,7 @@ def get_lead_by_uuid(lead_uuid: str) -> Optional[LeadData]:
 					title=row['title'], url=row['item_url'], source_name=row['source_name'],
 					publication_date=row['publication_date'], text=row['full_text'], html=row['full_html'],
 					metadata=_rehydrate_metadata(row['source_name'], row['metadata']),
-					lead_uuid=str(row['lead_uuid'])
+					lead_uuid=row['lead_uuid']
 			)
 	except Exception as e:
 		logger.error(f"Failed to get lead {lead_uuid}: {e}")
@@ -372,7 +374,7 @@ def get_lead_by_uuid(lead_uuid: str) -> Optional[LeadData]:
 		release_conn(conn)
 
 
-def get_staged_lead_details(lead_uuid: str) -> Optional[Dict]:
+def get_staged_lead_details(lead_uuid: uuid.UUID) -> Optional[Dict]:
 	"""Fetches full details for a single staged lead."""
 	conn = get_conn()
 	sql = """
@@ -632,17 +634,17 @@ def get_assets_for_case(case_uuid: str) -> List[Asset]:
 
 def _row_to_asset(row) -> Asset:
 	return Asset(
-			asset_id=str(row['asset_id']),
+			asset_id=row['asset_id'],
 			file_path=row['file_path'],
 			file_type=row['file_type'],
 			mime_type=row['mime_type'],
 			file_size=row['file_size'],
 			created_at=row['created_at'],
 			source_type=row['source_type'],
-			source_uuid=str(row['source_uuid']) if row['source_uuid'] else None,
+			source_uuid=row['source_uuid'] if row['source_uuid'] else None,
 			original_url=row['original_url'],
-			related_cases=[str(u) for u in (row['related_cases'] or [])],
-			related_investigations=[str(u) for u in (row['related_investigations'] or [])],
+			related_cases=[u for u in (row['related_cases'] or [])],
+			related_investigations=[u for u in (row['related_investigations'] or [])],
 			is_enhanced=row['is_enhanced'],
 			notes=row['notes'],
 			metadata=row['metadata'] or {}

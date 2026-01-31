@@ -32,7 +32,7 @@ if sys.platform == "win32":
     magic.Magic()
 
 class ImageViewer:
-    def __init__(self, image_path_or_frame, source_uuid):
+    def __init__(self, image_path_or_frame, source_uuid: uuid.UUID):
         self.image = None
         self.metadata = None
         self.original_bytes = None
@@ -185,12 +185,12 @@ class ImageViewer:
             cv2.imwrite(output_path, self.image)
             file_size = os.path.getsize(output_path)
             asset = Asset(
-                    source_uuid=uuid.UUID(self.source_uuid) if self.source_uuid else None,  # Convert to UUID
+                    source_uuid=self.source_uuid if self.source_uuid else None,
                     file_path=output_path,
                     file_type="image",
                     mime_type="image/png",
                     file_size=file_size,
-                    related_cases=[uuid.UUID(self.source_uuid)] if self.source_uuid else [],  # Convert to UUID
+                    related_cases=[self.source_uuid] if self.source_uuid else [],
                     metadata={
                         "image_metadata": self.metadata.to_dict() if self.metadata else None
                     }
