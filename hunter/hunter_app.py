@@ -353,16 +353,9 @@ class HunterApp(ctk.CTk):
 		logger.info("[APP]: Hunter dispatch requested...")
 		self.search_button.configure(state="disabled", text="Hunting...")
 
-		# Get the list of sources for the dispatcher from the db_manager
-		sources_to_hunt = db_manager.get_active_sources_by_purpose()
-		if not sources_to_hunt:
-			logger.warning("No active sources found to hunt.")
-			self.search_button.configure(state="normal", text="Search for New Cases")
-			return
-
-		# Run the dispatcher's 'dispatch' method in a separate thread
-		self.hunt_event = self.dispatcher.dispatch(sources_to_hunt)  # Store the event
-		self.after(1000, self._check_hunt_status)  # Start polling
+		# Dispatch handles its own data now
+		self.hunt_event = self.dispatcher.dispatch()
+		self.after(1000, self._check_hunt_status)
 
 	def _check_hunt_status(self):
 		if not self.hunt_event.is_set():

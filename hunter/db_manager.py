@@ -19,7 +19,7 @@ from psycopg2.extras import register_uuid
 from psycopg2 import pool
 
 from hunter import config_manager
-from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS, Asset
+from hunter.models import LeadData, METADATA_CLASS_MAP, METADATA_EXTRA_FIELDS, Asset, SourceConfig
 
 logger = logging.getLogger("DB Manager")
 
@@ -441,25 +441,69 @@ def get_source_id(source_name: str) -> Optional[int]:
 		release_conn(conn)
 
 
-def get_active_sources_by_purpose(purpose='lead_generation') -> List[Dict]:
-	"""Fetches active sources for the dispatcher."""
+def get_domains_with_sources(purpose='lead_generation') -> Dict:
 	conn = get_conn()
-	sql = """
-		  SELECT s.*, sd.agent_type
-		  FROM sources s
-		  JOIN source_domains sd ON s.domain_id = sd.id
-		  WHERE s.is_active = TRUE AND s.purpose = %s;
-	"""
 	try:
+		SQL_DOMAINS_WITH_SOURCES = ("""
+                                    SELECT sd.id AS domain_id,
+                                           sd.domain_name,
+                                           sd.agent_type,
+                                           sd.max_concurrent_requests,
+                                           s.id  AS source_id,
+                                           s.source_name,
+                                           s.target,
+                                           s.keywords,
+                                           s.strategy,
+                                           s.is_active,
+                                           s.consecutive_failures,
+                                           s.last_checked_date,
+                                           s.last_success_date,
+                                           s.last_failure_date,
+                                           s.last_known_item_id,
+                                           s.next_release_date,
+                                           s.purpose
+                                    FROM source_domains sd
+                                             JOIN sources s ON s.domain_id = sd.id
+                                    WHERE sd.has_standard_foreman = TRUE
+                                      AND s.is_active = TRUE
+                                      AND s.purpose = %s
+                                    ORDER BY sd.domain_name, s.source_name;
+		                            """)
 		with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-			cur.execute(sql, (purpose,))
-			return [dict(row) for row in cur.fetchall()]
-	except Exception as e:
-		logger.error(f"Failed to get active sources: {e}")
-		return []
+			cur.execute(SQL_DOMAINS_WITH_SOURCES, (purpose,))
+			rows = cur.fetchall()
+
+		domains = {}
+		for row in rows:
+			dname = row['domain_name']
+			if dname not in domains:
+				domains[dname] = {
+					'domain_id':      row['domain_id'],
+					'agent_type':     row['agent_type'],
+					'max_concurrent': row['max_concurrent_requests'],
+					'sources':        []
+				}
+			domains[dname]['sources'].append(SourceConfig(
+					id=row['source_id'],
+					source_name=row['source_name'],
+					agent_type=row['agent_type'],
+					target=row['target'],
+					domain_id=row['domain_id'],
+					purpose=row['purpose'],
+					is_active=row['is_active'],
+					consecutive_failures=row['consecutive_failures'],
+					last_checked_date=row['last_checked_date'],
+					last_success_date=row['last_success_date'],
+					last_failure_date=row['last_failure_date'],
+					last_known_item_id=row['last_known_item_id'],
+					strategy=row['strategy'],
+					keywords=row['keywords'],
+					next_release_date=row['next_release_date'],
+			))
+
+		return domains
 	finally:
 		release_conn(conn)
-
 
 def update_source_state(source_id: int, success: bool, new_bookmark=None):
 	"""Updates operational state of a source (bookmarks)."""

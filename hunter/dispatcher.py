@@ -7,7 +7,6 @@ import logging
 import threading
 import inspect
 from pathlib import Path
-from hunter.models import SourceConfig
 
 # --- Our Tools ---
 from hunter import db_manager
@@ -52,83 +51,107 @@ def _build_foreman_map():
 
 class Dispatcher:
 	def __init__(self, config):
+		self.all_threads_done = None
 		self.config = config
 		self.filing_clerk = FilingClerk()
 		self.active_threads = {}
 		self.foreman_map = _build_foreman_map()
 
-	def dispatch(self, sources):
+	def dispatch(self):
+		"""Dispatch all active domains. Gets its own data."""
+		domains = db_manager.get_domains_with_sources()
+
+		if not domains:
+			logger.info("No active domains/sources found.")
+			return threading.Event()  # Already "done"
+
 		threads = []
 		self.all_threads_done = threading.Event()
 
-		for source in sources:
-			source_config = SourceConfig(**source)
-			thread = threading.Thread(target=self._dispatch_source, args=(source_config,))
-			self.active_threads[source_config.source_name] = thread
+		for domain_name, domain_info in domains.items():
+			foreman_name = f"{domain_info['agent_type']}_foreman"
+			if foreman_name not in self.foreman_map:
+				logger.error(f"No foreman found for '{foreman_name}', skipping domain '{domain_name}'")
+				continue
+
+			thread = threading.Thread(
+					target=self._dispatch_domain,
+					args=(domain_name, domain_info),
+					name=f"domain-{domain_name}"
+			)
+			self.active_threads[domain_name] = thread
 			threads.append(thread)
 			thread.start()
 
 		def wait_for_all():
-			for thread_loop in threads:
-				thread_loop.join()
+			for t in threads:
+				t.join()
 			self.all_threads_done.set()
 
 		watcher = threading.Thread(target=wait_for_all)
 		watcher.start()
 		return self.all_threads_done
 
-	def _dispatch_source(self, source_config: SourceConfig):
-		source_name = source_config.source_name
-		agent_type = source_config.agent_type
+	def _dispatch_domain(self, domain_name, domain_info):
+		"""Handle all sources for a single domain."""
+		agent_type = domain_info['agent_type']
+		sources = domain_info['sources']
+		foreman_name = f"{agent_type}_foreman"
+		foreman_handler = self.foreman_map[foreman_name]
 
-		if not all([source_name, agent_type]):
-			logger.error(f"Source missing required config.")
+		# Get credentials once per domain
+		credentials = self._get_credentials(agent_type)
+
+		# Import agent once per domain
+		try:
+			agent_module = importlib.import_module(f"search_agents.{agent_type}_agent")
+		except ImportError as e:
+			logger.critical(f"Failed to import agent for '{agent_type}': {e}")
 			return
 
-		try:
-			# 1. AGENT HUNT
-			agent_module = importlib.import_module(f"search_agents.{agent_type}_agent")
-			credentials = None
-			if agent_type == 'reddit':
-				credentials = self.config.get_reddit_credentials()
-			elif agent_type == 'gnews_io':
-				credentials = self.config.get_gnews_io_credentials()
+		# Process each source
+		for source in sources:
+			try:
+				self._process_source(source, agent_module, foreman_handler, credentials)
+			except Exception as e:
+				logger.critical(f"Error processing source '{source.source_name}': {e}", exc_info=True)
+				db_manager.update_source_state(source.id, success=False)
 
-			raw_leads, bookmark = agent_module.hunt(source_config, credentials)
+		logger.info(f"Domain '{domain_name}' complete. Processed {len(sources)} sources.")
 
-			if not raw_leads:
-				# Even if no leads, update the 'last_checked_date' to show we looked
-				db_manager.update_source_state(source_config.id, success=True)
-				logger.info(f"Agent for '{source_name}' returned no new leads.")
-				return
+	def _process_source(self, source, agent_module, foreman_handler, credentials):
+		"""Process a single source - agent → foreman → filing."""
+		# 1. Hunt
+		raw_leads, bookmark = agent_module.hunt(source, credentials)
 
-			# 2. FOREMAN TRANSLATION
-			foreman_name = f"{agent_type}_foreman"
-			foreman_handler = self.foreman_map.get(foreman_name)
+		if not raw_leads:
+			db_manager.update_source_state(source.id, success=True)
+			logger.info(f"Agent for '{source.source_name}' returned no new leads.")
+			return
 
-			processed_leads = []
-			if inspect.isclass(foreman_handler):
-				foreman_instance = foreman_handler(source_config)
-				processed_leads = foreman_instance.translate_leads(raw_leads)
-			else:
-				processed_leads = foreman_handler.translate(raw_leads, source_name)
+		# 2. Translate
+		if inspect.isclass(foreman_handler):
+			foreman_instance = foreman_handler(source)
+			processed_leads = foreman_instance.translate_leads(raw_leads)
+		else:
+			processed_leads = foreman_handler.translate(raw_leads, source.source_name)
 
-			if not processed_leads:
-				db_manager.update_source_state(source_config.id, success=True)
-				return
+		if not processed_leads:
+			db_manager.update_source_state(source.id, success=True)
+			return
 
-			# 3. FILING
-			self.filing_clerk.file_leads(processed_leads)
+		# 3. File
+		self.filing_clerk.file_leads(processed_leads)
 
-			# 4. COMMIT STATE (The Fix)
-			# We pass the bookmark back to the DB so the NEXT hunt knows where to start.
-			db_manager.update_source_state(source_config.id, success=True, new_bookmark=bookmark)
-			logger.info(f"Source '{source_name}' state updated with bookmark: {bookmark}")
+		# 4. Update state
+		db_manager.update_source_state(source.id, success=True, new_bookmark=bookmark)
+		logger.info(f"Source '{source.source_name}' done. Bookmark: {bookmark}")
 
-		except Exception as e:
-			logger.critical(f"Error in dispatch loop for '{source_name}': {e}", exc_info=True)
-			# Log the failure in the DB so the GUI shows the source is erroring
-			db_manager.update_source_state(source_config.id, success=False)
-		finally:
-			if source_name in self.active_threads:
-				del self.active_threads[source_name]
+	def _get_credentials(self, agent_type):
+		match agent_type:
+			case 'reddit':
+				return self.config.get_reddit_credentials()
+			case 'gnews_io':
+				return self.config.get_gnews_io_credentials()
+			case _:
+				return None
