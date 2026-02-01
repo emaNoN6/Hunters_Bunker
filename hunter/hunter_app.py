@@ -100,6 +100,7 @@ class HunterApp(ctk.CTk):
 		self.title("Hunter's Command Console")
 		self.geometry("800x600+100+100")
 		self.configure(fg_color=DARK_BG)
+		self._video_menu = None
 
 		# --- Font Definitions ---
 		self.main_font = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE)
@@ -426,7 +427,6 @@ class HunterApp(ctk.CTk):
 		logger.info(f"[APP]: Triage list updated with {len(leads)} leads.")
 
 	def _toggle_source_group(self, header, content_frame, leads):
-		start_time = time.perf_counter()
 		header_label = header.winfo_children()[0]
 		if header._is_expanded:
 			content_frame.pack_forget()
@@ -436,11 +436,8 @@ class HunterApp(ctk.CTk):
 			header_label.configure(text=header_label.cget("text").replace("▶", "▼"))
 			content_frame.pack(fill="x", padx=2, after=header)
 			header._is_expanded = True
-			start_time = time.perf_counter()
 			if not content_frame.winfo_children():
 				self._create_lead_widgets(content_frame, leads)
-		end_time = time.perf_counter()
-		logger.debug(f"[APP]: Expanding source group took {end_time - start_time:.2f} seconds.")
 
 	def _create_lead_widgets(self, parent_frame, leads):
 		tooltip_x = int(GUI_CONFIG.get("tooltip_x_offset", 20))
@@ -578,12 +575,14 @@ class HunterApp(ctk.CTk):
 				media_fallback_url = media.get('fallback_url')
 				media_type = media.get('type')
 				duration = media.get('duration', 0)
+				permalink = lead_data.url
 
 				match media_type:
 					case 'video':
 						# Add to links with duration if available
 						label = f"🎞️ {media_type.title()} ({duration}s)" if duration else media_type.title()
 						extracted_links.append({'text':         label,
+						                        'permalink': permalink,
 						                        'url':          media_url if media_url else media_fallback_url,
 						                        'fallback_url': media_fallback_url,
 						                        'type':         'video',
@@ -619,10 +618,10 @@ class HunterApp(ctk.CTk):
 				link_label.pack(fill="x", padx=5, pady=2)
 				if link.get('type') == 'video':
 					click_handler = partial(self._show_video_menu,
-					                        link['url'],  # hls for viewing
+					                        link['permalink'],  # hls for viewing
 					                        link['fallback_url'],  # mp4 for analysis
 					                        link['lead_uuid'])
-					link_label.bind("<Button-1>", click_handler)
+					link_label.bind("<Button-3>", click_handler)
 				elif link.get('type') == 'image':
 					click_handler = partial(self.show_image, link['url'], lead_uuid)
 				else:
@@ -636,6 +635,22 @@ class HunterApp(ctk.CTk):
 		Show video menu
 		"""
 
+		def launch_viewer(permalink):
+			def run_resolve():
+				from hunter.utils.reddit_resolver import get_fresh_hls_url
+				# 1. Get the fresh stream with audio
+				video_url = get_fresh_hls_url(permalink)
+				logger.debug(f"Video URL: {video_url}")
+				if video_url:
+					# 2. Launch your lightweight player (FFmpeg/MPV/etc)
+					# Note: OpenCV (cv2.imshow) CANNOT play audio.
+					# You must use your FFmpeg sync setup here.
+					self.play_with_ffplay(video_url)
+				else:
+					logger.error("Could not resolve audio stream.")
+
+			threading.Thread(target=run_resolve, daemon=True).start()
+
 		def open_in_browser(url: str):
 			import webbrowser
 			threading.Thread(
@@ -643,14 +658,22 @@ class HunterApp(ctk.CTk):
 					daemon=True
 			).start()
 
-		menu = Menu(self, tearoff=0)
-		menu.add_command(label="▶ Open in browser", command=lambda: [menu.destroy(), open_in_browser(hls_url)])
-		menu.add_separator()
-		if fallback_url:
-			menu.add_command(label="🔍 Analyze",
-			                 command=lambda: [menu.destroy(), self.analyze_video(fallback_url, lead_uuid=lead_uuid)])
-		menu.post(event.x_root, event.y_root)
+		# Kill any existing menu
+		if hasattr(self, '_video_menu') and self._video_menu:
+			self._video_menu.destroy()
 
+		self._video_menu = Menu(self, tearoff=0)
+		self._video_menu.add_command(label="🌐 Open in browser",
+		                             command=lambda: open_in_browser(hls_url))
+		self._video_menu.add_separator()
+		self._video_menu.add_command(label="▶ Play Video",
+		                             command=lambda: self.play_with_ffplay(permalink=hls_url))
+		self._video_menu.add_separator()
+		if fallback_url:
+			self._video_menu.add_command(label="🔍 Analyze",
+			                             command=lambda: self.analyze_video(fallback_url, lead_uuid=lead_uuid))
+
+		self._video_menu.tk_popup(event.x_root, event.y_root)
 	@staticmethod
 	def _is_link_alive(link):
 		import requests
@@ -662,6 +685,40 @@ class HunterApp(ctk.CTk):
 		except:
 			logger.info(f"[APP]: Link status: {response.status_code}")
 			return False
+
+	def play_with_ffplay(self, permalink):
+		import shutil
+		import subprocess
+		# Make sure this points to where you saved the resolver
+		from hunter.utils.reddit_resolver import get_fresh_hls_url
+
+		# 1. Check for FFplay
+		if not shutil.which("ffplay"):
+			logger.error("FFplay not found. Please install ffmpeg.")
+			return
+
+		# 2. Get Fresh Link (Just-in-Time)
+		hls_url = get_fresh_hls_url(permalink)
+		if not hls_url:
+			logger.error(f"Could not resolve stream for: {permalink}")
+			return
+
+		# 3. Spoof Headers (Just to be safe against strict CDN nodes)
+		#    This is the string from Test 2, which is generally safest.
+		ua_string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+		# 4. Fire and Forget
+		cmd = [
+			"ffplay",
+			"-autoexit",
+			"-window_title", "Hunter Viewer",
+			"-loglevel", "quiet",
+			"-user_agent", ua_string,
+			hls_url
+		]
+
+		# Popen ensures your UI doesn't freeze while the video plays
+		subprocess.Popen(cmd)
 
 	def analyze_video(self, video_url: str, lead_uuid):
 		"""
