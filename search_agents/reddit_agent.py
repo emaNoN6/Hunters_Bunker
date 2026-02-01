@@ -1,6 +1,8 @@
 # ==========================================================
 # Hunter's Command Console - Reddit Agent (v2.4 - Fullname Fix)
 # ==========================================================
+import time
+
 import praw
 import logging
 from hunter.models import SourceConfig
@@ -12,6 +14,8 @@ def hunt(source: SourceConfig, credentials: dict):
 	subreddit_name = source.target
 	last_checked_id = source.last_known_item_id
 
+	logger.debug(f"Searching subreddit '{subreddit_name}' at {time.time()}")
+
 	try:
 		reddit = praw.Reddit(
 				client_id=credentials['client_id'],
@@ -20,7 +24,8 @@ def hunt(source: SourceConfig, credentials: dict):
 		)
 		subreddit = reddit.subreddit(subreddit_name)
 		params = {'before': last_checked_id} if last_checked_id else {}
-		new_posts = list(subreddit.new(limit=50, params=params))
+		new_posts = list(subreddit.new(limit=100, params=params))
+		logger.debug(f"Reddit limits {reddit.auth.limits}")
 
 		if not new_posts:
 			return [], last_checked_id

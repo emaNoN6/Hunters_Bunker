@@ -7,6 +7,7 @@ import logging
 import threading
 import inspect
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Our Tools ---
 from hunter import db_manager
@@ -93,29 +94,30 @@ class Dispatcher:
 		return self.all_threads_done
 
 	def _dispatch_domain(self, domain_name, domain_info):
-		"""Handle all sources for a single domain."""
+		"""Handle all sources for a single domain, threaded."""
 		agent_type = domain_info['agent_type']
 		sources = domain_info['sources']
-		foreman_name = f"{agent_type}_foreman"
-		foreman_handler = self.foreman_map[foreman_name]
-
-		# Get credentials once per domain
+		max_concurrent = domain_info['max_concurrent']
+		foreman_handler = self.foreman_map[f"{agent_type}_foreman"]
 		credentials = self._get_credentials(agent_type)
 
-		# Import agent once per domain
 		try:
 			agent_module = importlib.import_module(f"search_agents.{agent_type}_agent")
 		except ImportError as e:
 			logger.critical(f"Failed to import agent for '{agent_type}': {e}")
 			return
 
-		# Process each source
-		for source in sources:
-			try:
-				self._process_source(source, agent_module, foreman_handler, credentials)
-			except Exception as e:
-				logger.critical(f"Error processing source '{source.source_name}': {e}", exc_info=True)
-				db_manager.update_source_state(source.id, success=False)
+		with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+			futures = {
+				executor.submit(self._process_source, source, agent_module, foreman_handler, credentials): source
+				for source in sources
+			}
+			for future in as_completed(futures):
+				source = futures[future]
+				try:
+					future.result()
+				except Exception as e:
+					logger.error(f"Source '{source.source_name}' failed: {e}")
 
 		logger.info(f"Domain '{domain_name}' complete. Processed {len(sources)} sources.")
 
